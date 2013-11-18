@@ -1,0 +1,520 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+	android:id="@+id/scrollView1"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content" >
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical" >
+
+    <TextView
+        android:id="@+id/textView2"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/manage_projects"
+        android:textAppearance="?android:attr/textAppearanceMedium" >
+
+	</TextView>    
+
+    <Spinner
+        android:id="@+id/projectSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="44dp" />
+    
+    <TableLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" >
+        
+            <TableRow
+                android:id="@+id/tableRow5"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" >
+
+                <Button
+                    android:id="@+id/loadProjectButton"
+                    style="?android:attr/buttonStyleSmall"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:onClick="loadProjectButtonClickHandler"
+                    android:text="@string/load_project" />
+
+            	<Button
+            	    android:id="@+id/deleteProjectButton"
+            	    style="?android:attr/buttonStyleSmall"
+            	    android:layout_width="wrap_content"
+            	    android:layout_height="wrap_content"
+            	    android:onClick="deleteProjectButtonClickHandler"
+            	    android:text="@string/delete_project" />
+                
+            </TableRow>
+
+            <EditText
+                android:id="@+id/newProjectEditText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ems="10"
+                android:hint="@string/project_name_hint"
+                android:text="@string/default_project" />
+
+        <TableRow
+            android:id="@+id/tableRow3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <Button
+                android:id="@+id/newProjectButton"
+                style="?android:attr/buttonStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:onClick="newProjectButtonClickHandler"
+                android:text="@string/new_project" />
+        </TableRow>
+
+            <TextView
+                android:id="@+id/textView3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/start_service"
+                android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>    		    
+        
+        <TableRow
+            android:id="@+id/tableRow4"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+           	<TextView
+           	    android:id="@+id/textView4"
+           	    android:layout_width="wrap_content"
+           	    android:layout_height="wrap_content"
+           	    android:text="@string/title_navigator_service"
+           	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>    
+            
+            <ToggleButton
+                android:id="@+id/navToggleButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="false"
+                android:hint="@string/toggle_nav_hint"
+                android:onClick="runButtonClickHandler"
+                android:text="@string/toggle_nav_on" >
+
+			</ToggleButton>
+		
+	    </TableRow>	
+		<TableRow
+            android:id="@+id/tableRow6"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <TextView
+                android:id="@+id/textView5"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/gps_service"
+                android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>    		    
+
+            	<ToggleButton
+            	    android:id="@+id/gpsToggleButton"
+            	    android:layout_width="wrap_content"
+            	    android:layout_height="wrap_content"
+            	    android:checked="false"
+            	    android:onClick="runButtonClickHandler"
+            	    android:text="@string/toggle_gps_on" >
+
+			</ToggleButton>            
+ 		</TableRow>	        	    
+		<TableRow
+            android:id="@+id/tableRow7"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <TextView
+                android:id="@+id/textView6"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/title_ioio_service"
+                android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>    
+		    
+        	<ToggleButton
+        	    android:id="@+id/ioioToggleButton"
+        	    android:layout_width="wrap_content"
+        	    android:layout_height="wrap_content"
+        	    android:checked="false"
+        	    android:onClick="runButtonClickHandler"
+        	    android:text="@string/toggle_ioio" >
+
+			</ToggleButton>
+        </TableRow>
+        <TableRow
+            android:id="@+id/tableRow8"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <TextView
+                android:id="@+id/textView7"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/title_chat_service"
+                android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>    		    
+
+            	<ToggleButton
+            	    android:id="@+id/chatToggleButton"
+            	    android:layout_width="wrap_content"
+            	    android:layout_height="wrap_content"
+            	    android:checked="false"
+            	    android:onClick="runButtonClickHandler"
+            	    android:text="@string/toggle_chat_service" >
+
+			</ToggleButton>            
+ 		</TableRow>	        	    
+		        <TableRow
+            android:id="@+id/tableRow9"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <TextView
+                android:id="@+id/textView8"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/title_operate"
+                android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>    		    
+
+            	<ToggleButton
+            	    android:id="@+id/operateToggleButton"
+            	    android:layout_width="wrap_content"
+            	    android:layout_height="wrap_content"
+            	    android:checked="false"
+            	    android:onClick="runButtonClickHandler"
+            	    android:text="@string/toggle_operative" >
+
+			</ToggleButton>            
+ 		</TableRow>	        	    
+        	
+       	<TextView
+       	    android:id="@+id/textView9"
+       	    android:layout_width="wrap_content"
+       	    android:layout_height="wrap_content"
+       	    android:text="@string/title_nav_run_mode"
+       	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+		</TextView>    		    
+		
+        <TableRow
+            android:id="@+id/tableRow10"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+        
+           <CheckBox
+               android:id="@+id/debugCheckBox"
+               android:layout_width="wrap_content"
+               android:layout_height="wrap_content"
+               android:onClick="checkBoxClickHandler"
+               android:text="@string/mode_debug" />
+
+    		<CheckBox
+    		    android:id="@+id/appendCheckBox"
+    		    android:layout_width="wrap_content"
+    		    android:layout_height="wrap_content"
+    		    android:checked="true"
+    		    android:onClick="checkBoxClickHandler"
+    		    android:text="@string/mode_append_logs" />
+        
+        </TableRow>
+        <TableRow
+            android:id="@+id/tableRow11"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+        
+           <CheckBox
+               android:id="@+id/simulateGPSCheckBox"
+               android:layout_width="wrap_content"
+               android:layout_height="wrap_content"
+               android:onClick="checkBoxClickHandler"
+               android:text="@string/mode_simulator" />
+
+        </TableRow>
+
+	    <TextView
+	        android:id="@+id/textView10"
+	        android:layout_width="wrap_content"
+	        android:layout_height="wrap_content"
+	        android:text="@string/title_bound_nav_services"
+	        android:textAppearance="?android:attr/textAppearanceMedium" >
+
+		</TextView>
+        
+        <TableRow
+            android:id="@+id/tableRow12"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <CheckBox
+                android:id="@+id/gpsServiceCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/gps" />
+
+            <CheckBox
+                android:id="@+id/ioioServiceCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/IOIO" />
+ 
+        </TableRow>
+            
+        	<TextView
+        	    android:id="@+id/textView11"
+        	    android:layout_width="wrap_content"
+        	    android:layout_height="wrap_content"
+        	    android:text="@string/Filtering_and_measurements"
+        	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>
+            
+        <TableRow
+            android:id="@+id/tableRow13"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <CheckBox
+                android:id="@+id/kalmanCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/Filter" />
+
+            <CheckBox
+                android:id="@+id/gpsPosMeasurementCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/GPS_position" />
+ 
+        </TableRow>
+        <TableRow
+            android:id="@+id/tableRow16"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <CheckBox
+                android:id="@+id/gpsBearingMeasurementCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/GPS_Bearing" />
+
+            <CheckBox
+                android:id="@+id/gpsVelMeasurementCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/GPS_velocity" /> 
+        </TableRow>
+        
+        <TableRow
+            android:id="@+id/tableRow17"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <CheckBox
+                android:id="@+id/encoderVelMeasurementCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/Motor_velocity" />
+
+            <CheckBox
+                android:id="@+id/encoderTurnrateMeasurementCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/Rudder_turnrate" />  
+        </TableRow>
+        <TableRow
+            android:id="@+id/tableRow18"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+            <CheckBox
+                android:id="@+id/compassMeasurementCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:onClick="checkBoxClickHandler"
+                android:text="@string/Compass_bearing" />
+        </TableRow>        
+
+        	<TextView
+        	    android:id="@+id/textView12"
+        	    android:layout_width="wrap_content"
+        	    android:layout_height="wrap_content"
+        	    android:text="@string/Boat_control_basics"
+        	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>
+        <TableRow
+            android:id="@+id/tableRow19"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+        	<TextView
+        	    android:id="@+id/textView13"
+        	    android:layout_width="wrap_content"
+        	    android:layout_height="wrap_content"
+        	    android:text="@string/WP_tolerance"
+        	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>
+			
+        	<EditText
+        	    android:id="@+id/waypointToleranceEditText"
+        	    android:layout_width="62dp"
+        	    android:layout_height="wrap_content"
+        	    android:ems="10"
+        	    android:inputType="numberDecimal" >
+
+        	    <requestFocus />
+        	</EditText>
+        </TableRow>
+        <TableRow
+            android:id="@+id/tableRow20"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" >
+
+        	<TextView
+        	    android:id="@+id/textView14"
+        	    android:layout_width="wrap_content"
+        	    android:layout_height="wrap_content"
+        	    android:text="@string/Filter_dt"
+        	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>
+			
+        	<EditText
+        	    android:id="@+id/dtEditText"
+        	    android:layout_width="62dp"
+        	    android:layout_height="wrap_content"
+        	    android:ems="10"
+        	    android:inputType="numberDecimal" >
+
+        	    <requestFocus />
+        	</EditText>
+        </TableRow>
+
+      	<TextView
+      	    android:id="@+id/textView15"
+      	    android:layout_width="wrap_content"
+      	    android:layout_height="wrap_content"
+      	    android:text="@string/Test_controls"
+      	    android:textAppearance="?android:attr/textAppearanceMedium" >
+		</TextView>
+
+      	<TableRow
+      	    android:id="@+id/tableRow21"
+      	    android:layout_width="wrap_content"
+      	    android:layout_height="wrap_content" >
+
+      	    <Button
+      	        android:id="@+id/testRudderButton"
+      	        style="?android:attr/buttonStyleSmall"
+      	        android:layout_width="wrap_content"
+      	        android:layout_height="wrap_content"
+      	        android:onClick="testRudder"
+      	        android:text="@string/Set_rudder_angle" />
+      	    
+      	    <EditText
+      	        android:id="@+id/rudderAngleEditText"
+      	        android:layout_width="62dp"
+      	        android:layout_height="wrap_content"
+      	        android:ems="10"
+      	        android:inputType="numberDecimal|numberSigned"
+      	        android:text="@string/default_test_angle" />
+
+      	</TableRow>
+		<TableRow
+      	    android:id="@+id/tableRow22"
+      	    android:layout_width="wrap_content"
+      	    android:layout_height="wrap_content" >
+
+      	    <Button
+      	        android:id="@+id/testMotorButton"
+      	        style="?android:attr/buttonStyleSmall"
+      	        android:layout_width="wrap_content"
+      	        android:layout_height="wrap_content"
+      	        android:onClick="testMotor"
+      	        android:text="@string/Set_motor_load" />
+      	    
+      	    <EditText
+      	        android:id="@+id/motorLoadEditText"
+      	        android:layout_width="62dp"
+      	        android:layout_height="wrap_content"
+      	        android:ems="10"
+      	        android:inputType="numberDecimal"
+      	        android:text="@string/default_motor_load" />
+
+      	</TableRow>
+
+        <Button
+            android:id="@+id/readGPSbutton"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:onClick="readGPS"
+            android:text="@string/Read_GPS" />
+      	
+      	<TableRow
+      	    android:id="@+id/tableRow23"
+      	    android:layout_width="wrap_content"
+      	    android:layout_height="wrap_content" >
+
+      	  	<TextView
+      	  	    android:id="@+id/textViewY"
+      	  	    android:layout_width="wrap_content"
+      	  	    android:layout_height="wrap_content"
+      	  	    android:text="@string/X_Y_Accuracy"
+      	  	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>
+			
+      	  	<TextView
+      	  	    android:id="@+id/XYAccuracyTextView"
+      	  	    android:layout_width="wrap_content"
+      	  	    android:layout_height="wrap_content"
+      	  	    android:text="@string/default_gps_accuracy"
+      	  	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>
+      	  	      	    	  
+      	</TableRow>
+      		
+
+    </TableLayout>
+    
+</LinearLayout>
+
+</ScrollView>
+

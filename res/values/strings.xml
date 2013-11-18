@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="hello">Hello World, SonardroneActivity!</string>
+    <string name="app_name">Sonardrone</string>
+    <string name="logger_service_name">LoggerService</string>
+    <string name="activity_name">Sonardrone</string>
+    <string name="manage_projects">Manage projects</string>
+    <string name="load_project">Load</string>
+    <string name="delete_project">Delete</string>
+    <string name="new_project">New project</string>
+    <string name="default_project">default</string>
+    <string name="start_service">Start/Stop services</string>
+    <string name="project_name_hint">Project name</string>
+    <string name="title_navigator_service">Navigator service</string>
+    <string name="toggle_nav_on">Nav</string>
+    <string name="toggle_gps_on">GPS</string>
+    <string name="gps_service">GPS service</string>
+    <string name="toggle_nav_hint">Toggle Navigator</string>
+    <string name="toggle_ioio">IOIO</string>
+    <string name="toggle_chat_service">Chat</string>
+    <string name="toggle_operative">Operate</string>
+    <string name="title_ioio_service">IOIO service</string>
+    <string name="title_chat_service">Chat service</string>
+    <string name="title_operate">Operate</string>
+    <string name="title_nav_run_mode">Navigator run mode</string>
+    <string name="mode_debug">Debug</string>
+    <string name="mode_append_logs">Append logs</string>
+    <string name="mode_simulator">Simulator</string>
+    <string name="title_bound_nav_services">Bound Navigation Services</string>
+    <string name="gps">GPS</string>
+    <string name="IOIO">IOIO</string>
+    <string name="Filter">Filter</string>
+    <string name="GPS_position">GPS position</string>
+    <string name="GPS_Bearing">GPS Bearing</string>
+    <string name="GPS_velocity">GPS velocity</string>
+    <string name="Motor_velocity">Motor velocity</string>
+    <string name="Rudder_turnrate">Rudder turnrate</string>
+    <string name="Compass_bearing">Compass bearing</string>
+    <string name="Boat_control_basics">Boat control basics</string>
+    <string name="WP_tolerance">WP tolerance [m]:</string>
+    <string name="Filter_dt">Filter dt [s]</string>
+    <string name="Test_controls">Test controls</string>
+    <string name="Set_rudder_angle">Set rudder angle</string>
+    <string name="default_test_angle">0</string>
+    <string name="default_motor_load">0</string>
+    <string name="Set_motor_load">Set motor load</string>
+    <string name="Read_GPS">Read GPS</string>
+    <string name="X_Y_Accuracy">X,Y,Accuracy:</string>
+    <string name="default_gps_accuracy">-,-,-</string>
+    <string name="Filtering_and_measurements">Filtering and measurements</string>
+
+</resources>
