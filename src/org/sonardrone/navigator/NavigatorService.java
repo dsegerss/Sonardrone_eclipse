@@ -12,6 +12,9 @@ import org.sonardrone.R;
 import org.sonardrone.chat.ChatService;
 import org.sonardrone.ioio.IOIOControlService;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -25,6 +28,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
+import android.util.Log;
 import android.widget.Toast;
 
 /**
@@ -132,8 +136,8 @@ public class NavigatorService extends Service {
 	public static volatile double rudderangle = 0;
 	public static volatile double load = 0;
 	public static volatile boolean operative=false;
+	private static final String TAG = "NavigatorService";
 	
-	private static final String tag = "NavigatorService";
 	private File projectDir = null;
 	// Map with settings 
 	private Map<String, String> settings = new HashMap<String, String>();
@@ -172,6 +176,8 @@ public class NavigatorService extends Service {
 			 }
 		 };
 	};
+	
+	
 	@Override
 	public void onCreate() {
 		super.onCreate();
@@ -181,18 +187,19 @@ public class NavigatorService extends Service {
 		showNotification();
 		
 		this.readConfig();
-   		
+   			
 		if (this.settings.get("ioioServiceSwitch") == "true") {
 			this.doBindIOIOControlService();
-   		}
-		
+		}	
+				
 		if (this.settings.get("chatServiceSwitch") == "true") {
 			this.doBindChatService();
-   		}
+		}
 
 		
 		this.navThread = new NavThread("navigator",this.projectDir,this.mainHandler);
 		this.navThreadHandler = this.navThread.getHandler();
+		
 	}
 
 	// onStop{}
