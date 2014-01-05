@@ -11,9 +11,18 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.http.HttpResponse;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.message.BasicNameValuePair;
 import org.sonardrone.chat.ChatService;
 import org.sonardrone.gps.GpsLoggerService;
 import org.sonardrone.ioio.IOIOControlService;
@@ -56,6 +65,7 @@ public class SonardroneActivity extends Activity {
     private final static int PLAY_SERVICES_RESOLUTION_REQUEST = 9000;
 
     String SENDER_ID = "539926077370"; //Project ID from API console
+    String DRONECENTRAL_URL = "drone_central_url";
     TextView mDisplay;
     GoogleCloudMessaging gcm;
     AtomicInteger msgId = new AtomicInteger();
@@ -320,7 +330,23 @@ public class SonardroneActivity extends Activity {
 	 * using the 'from' address in the message.
 	 */
 	private void sendRegistrationIdToBackend() {
-	    // Your implementation here.
+		HttpClient httpclient = new DefaultHttpClient();
+	    HttpPost httppost = new HttpPost(DRONECENTRAL_URL);
+
+	    try {
+	        // Add your data
+	        List<NameValuePair> nameValuePairs = new ArrayList<NameValuePair>(2);
+	        nameValuePairs.add(new BasicNameValuePair("device_id", "12345"));
+	        httppost.setEntity(new UrlEncodedFormEntity(nameValuePairs));
+
+	        // Execute HTTP Post Request
+	        HttpResponse response = httpclient.execute(httppost);
+	        
+	    } catch (ClientProtocolException e) {
+	    	Log.i(TAG, "Error when registring to dronecentral: " + e.getMessage());
+	    } catch (IOException e) {
+	        // TODO Auto-generated catch block
+	    }
 	}
 	
 	/**

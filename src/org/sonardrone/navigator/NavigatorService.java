@@ -9,7 +9,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.sonardrone.R;
-import org.sonardrone.chat.ChatService;
 import org.sonardrone.ioio.IOIOControlService;
 
 import com.google.android.gms.common.ConnectionResult;
@@ -19,15 +18,18 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
+import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -41,38 +43,50 @@ import android.widget.Toast;
  * @author David Segersson
  */
 
+enum COMMAND {
+	GET_STATUS,
+	ADD_WP,
+	ADD_SURVEY,
+	CLEAR_WP,
+	CLEAR_SURVEY,
+	SET_RUDDER,
+	SET_LOAD,
+	ACTIVATE,
+	DEACTIVATE,
+	AUTOPILOT,
+	MANUAL,
+	OPERATE,
+	SHUTDOWN,
+	START_MOTOR,
+	STOP_MOTOR
+	};
+	
 class NavThread extends Thread {
 	public	File projectDir; 						//path to project
 	public Navigator nav; 							//navigator object
 	public static Handler parentHandler;			//Handler for messages to parent service
 	private Handler threadHandler = new Handler() {	//Handler for messages to this thread
 		 public void handleMessage(Message msg) {
-			 switch (msg.what) {
-			 case 1: //start motor
+			 switch (COMMAND.valueOf(msg.what)) {
+			 case START_MOTOR: 
 				 nav.setMotorLoad(80.0);		 
-			 case 2: //stop motor
+			 case STOP_MOTOR:
 				 nav.setMotorLoad(0.0);
-			 case 3: //activate
+			 case ACTIVATE:
 				 nav.setActive(true);
-			 case 4: //deactivate
+			 case DEACTIVATE:
 				 nav.setActive(false);
-			 case 5: //shutdown
+			 case SHUTDOWN:
 				 NavigatorService.operative = false;
-			 case 6: //setLoad
+			 case SET_LOAD:
 				 nav.setMotorLoad((double) msg.arg1);
-			 case 7: //set rudder
+			 case SET_RUDDER:
 				 nav.setRudderAngle((double) msg.arg1);
-			 case 8: //autopilot
+			 case AUTOPILOT:
 				 nav.setAutopilot(true);
-			 case 9: //interactive
+			 case MANUAL:
 				 nav.setAutopilot(false);
-			 case 10: //send status
-				 Bundle data = nav.getStatus();
-				 Message returnMsg = new Message();
-				 returnMsg.what=0;
-				 returnMsg.setData(data);
-				 parentHandler.sendMessage(returnMsg);
-			 case 11: //add waypoint
+			 case ADD_WP:
 				 Bundle posData = msg.getData();
 				 nav.addWaypointWGS84(posData.getDouble("lon"),posData.getDouble("lat"));				 
 			 }
@@ -148,36 +162,74 @@ public class NavigatorService extends Service {
 		
 	//bound services
 	private IOIOControlService boundIOIOControlService;
-	public ChatService boundChatService;
 	private boolean ioioControlServiceIsBound = false;
-	private boolean chatServiceIsBound =false;
 	
 	private NavThread navThread;
 	private Handler navThreadHandler;
 	
 	private Handler mainHandler = new Handler() {
 		 public void handleMessage(Message msg) {
-			 switch (msg.what) {
-			 case 0: //send status
-				 if(chatServiceIsBound)
-					 boundChatService.forwardStatus(msg.getData());					 
-			 case 1: //start motor
+			 switch (COMMAND.valueOf(msg.what)) {
+			 case GET_STATUS:
+				 postStatus();					 
+			 case START_MOTOR:
 				 if(ioioControlServiceIsBound)
 					 boundIOIOControlService.startMotor();
-			 case 2: //start motor
+			 case STOP_MOTOR:
 				 if(ioioControlServiceIsBound)
 					 boundIOIOControlService.stopMotor();
-			 case 3: //set load
+			 case SET_LOAD:
 				 if(ioioControlServiceIsBound)
 					 boundIOIOControlService.setMotorLoad(msg.arg1);
-			 case 4: //set rudder angle
+			 case SET_RUDDER: 
 				 if(ioioControlServiceIsBound)
 					 boundIOIOControlService.setRudderAngle(msg.arg1);
 			 }
 		 };
 	};
 	
-	
+	// Our handler for received Intents. This will be called whenever an Intent
+	// with an action named "custom-event-name" is broadcasted.
+	private BroadcastReceiver gcmMessageReceiver = new BroadcastReceiver() {
+	  @Override
+	  public void onReceive(Context context, Intent intent) {
+	    // Get extra data included in the Intent
+	    String message = intent.getStringExtra("message");
+	    Log.d("gcmMessageReceiver", "got message: " + message);
+	    String[] parts = message.split(";");
+	    String cmd = parts[0];
+	    String val = parts[1];
+
+	    switch (COMMAND.valueOf(cmd)) {	    
+	    case GET_STATUS:
+	    	postStatus();
+	    case ADD_WP:
+	    	String[] posStrArray = val.split(" ");
+	    	double[] lon = new double[posStrArray.length];
+	    	double[] lat = new double[posStrArray.length];
+	    	for(int i=0; i<posStrArray.length;i++) {
+	    		lon[i] = Double.parseDouble(posStrArray[i].split(",")[0]);
+	    		lat[i] = Double.parseDouble(posStrArray[i].split(",")[1]);
+	    	}
+	    	addWaypoints(lon, lat);
+	    case ADD_SURVEY:
+	    	String[] posStrArray = val.split(" ");
+	    	double[] lon = new double[posStrArray.length];
+	    	double[] lat = new double[posStrArray.length];
+	    	for(int i=0; i<posStrArray.length;i++) {
+	    		lon[i] = Double.parseDouble(posStrArray[i].split(",")[0]);
+	    		lat[i] = Double.parseDouble(posStrArray[i].split(",")[1]);
+	    	}
+	    	addSurvey(lon, lat);
+	    case SET_LOAD:
+	    	int load = Integer.parseInt(val);
+	    	setMotorLoad(load);
+	    case SET_RUDDER:
+	    	int angle = Integer.parseInt(val);
+	    	setRudderAngle()
+	  }
+	};
+
 	@Override
 	public void onCreate() {
 		super.onCreate();
@@ -191,15 +243,10 @@ public class NavigatorService extends Service {
 		if (this.settings.get("ioioServiceSwitch") == "true") {
 			this.doBindIOIOControlService();
 		}	
-				
-		if (this.settings.get("chatServiceSwitch") == "true") {
-			this.doBindChatService();
-		}
-
-		
 		this.navThread = new NavThread("navigator",this.projectDir,this.mainHandler);
 		this.navThreadHandler = this.navThread.getHandler();
-		
+		LocalBroadcastManager.getInstance(this).registerReceiver(gcmMessageReceiver,
+				new IntentFilter("gcm-intent"));
 	}
 
 	// onStop{}
@@ -318,7 +365,6 @@ public class NavigatorService extends Service {
 	
 	@Override
 	public void onDestroy() {
-		super.onDestroy();
 		// Release bound services
 		doUnbindServices();
 
@@ -332,6 +378,9 @@ public class NavigatorService extends Service {
 
 		// Tell the user we stopped.
 		Toast.makeText(this, "Navigator stopped!", Toast.LENGTH_SHORT).show();
+		LocalBroadcastManager.getInstance(this).unregisterReceiver(gcmMessageReceiver);
+		
+		super.onDestroy();
 	}
 
 	private void showNotification() {
@@ -375,17 +424,6 @@ public class NavigatorService extends Service {
 			boundIOIOControlService = null;
 		}
 	};
-	
-	private ServiceConnection chatServiceConnection = new ServiceConnection() {
-		public void onServiceConnected(ComponentName className, IBinder service) {
-			boundChatService = ((ChatService.LocalBinder) service)
-					.getService();
-		}
-
-		public void onServiceDisconnected(ComponentName className) {
-			boundChatService = null;
-		}
-	};
 
 	private void doBindIOIOControlService() {
 		Intent intent = new Intent(this, IOIOControlService.class);
@@ -394,25 +432,12 @@ public class NavigatorService extends Service {
 		ioioControlServiceIsBound = true;
 	}
 	
-	private void doBindChatService() {
-		Intent intent = new Intent(this, ChatService.class);
-		bindService(intent, chatServiceConnection,
-				Context.BIND_AUTO_CREATE);
-		chatServiceIsBound = true;
-	}
-
 	private void doUnbindServices() {
 
 		if (ioioControlServiceIsBound) {
 			// Detach our existing connection.
 			unbindService(ioioControlServiceConnection);
 			ioioControlServiceIsBound = false;
-
-		}
-		if (chatServiceIsBound) {
-			// Detach our existing connection.
-			unbindService(chatServiceConnection);
-			chatServiceIsBound = false;
 
 		}
 	}
@@ -496,24 +521,17 @@ public class NavigatorService extends Service {
 		this.sendNavMessage(msg);
 	}
 	
-	public void sendStatus() {
-		// set state
-		Message msg = new Message();
-		msg.what = 10;
-		this.sendNavMessage(msg);
+	public void postStatus() {
+
 	}
-	
-	public void getStatus() {
-		
-	}
-	
-	public void addWaypoint(double lon,double lat) {
+
+	public void addWaypoints(double[] lon, double[] lat) {
 		// set state
 		Message msg = new Message();
 		msg.what = 11;
 		Bundle data = new Bundle();
-		data.putDouble("lon", lon);
-		data.putDouble("lat", lat);
+		data.putDoubleArray("lon", lon);
+		data.putDoubleArray("lat", lat);
 		msg.setData(data);
 		this.sendNavMessage(msg);		
 	}
