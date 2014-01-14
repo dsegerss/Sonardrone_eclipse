@@ -59,7 +59,7 @@ public class GcmIntentService extends IntentService {
                 Log.i(TAG,"Deleted messages on server: " + msg);
             // If it's a regular GCM message, do some work.
             } else if (GoogleCloudMessaging.MESSAGE_TYPE_MESSAGE.equals(messageType)) {
-                Intent forwardIntent = new Intent("gcm-intent");
+                Intent forwardIntent = new Intent("GCM_COMMAND");
                 // add data
                 forwardIntent.putExtra("message", msg);
                 LocalBroadcastManager.getInstance(this).sendBroadcast(intent);

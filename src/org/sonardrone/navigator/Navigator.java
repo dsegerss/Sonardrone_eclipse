@@ -42,6 +42,7 @@ import org.sonardrone.proj.positions.WGS84Position;
 
 import android.os.Bundle;
 import android.os.Message;
+import android.util.Log;
 
 
 /**
@@ -51,6 +52,7 @@ import android.os.Message;
  * @author David Segersson
  */
 public class Navigator {
+	String TAG = "Navigator";
 
 	/*
 	 * current state, corrected in order: X,Y,V,phi, turn_rate where X,Y is
@@ -88,25 +90,25 @@ public class Navigator {
 	public boolean simulateGPSSwitch = true;
 	public KalmanFilter kf = new NavFilter();
 
-	public double dt_default = 0.5;
+	private double dt_default = 0.5;
 	private final double dt = 0.5;
 	private int measDOF = 7;
 	private int stateDOF = 5;
-	private long lastTime = 0; // Time for current state, n (given i millisecs
-								// from start)
-	public long predictionTime = 0; // Time for predicted state, n+1 (given i
-									// millisecs from start)
+	
+	//times given in millisecs from start)
+	private long lastTime = 0; // Time for current state, n, 
+	private long predictionTime = 0; // Time for predicted state, n+1 
 	private long timeBefore = 0; // Start-time given in milliseconds
 
 	// waypoints and operation
-	public boolean active = false;
-	public boolean autoPilot = false;
-	public List<double[]> wp = new ArrayList<double[]>(); // waypoint list
-	public Iterator<double[]> wpIter = null;
-	public double[] cwp = null; // next waypoint on the path
-	public double[] lwp = null; // last waypoint on the path (just passed)
-	public double look_ahead = 10; // look-ahead distance
-	public double min_look_ahead = 2; // minimum look-ahead distance, when
+	private boolean active = false;
+	private boolean autoPilot = false;
+	private List<double[]> wp = new ArrayList<double[]>(); // waypoint list
+	private Iterator<double[]> wpIter = null;
+	private double[] cwp = null; // next waypoint on the path
+	private double[] lwp = null; // last waypoint on the path (just passed)
+	private double look_ahead = 10; // look-ahead distance
+	private double min_look_ahead = 2; // minimum look-ahead distance, when
 										// distance adapted not to overshoot
 										// waypoint
 	public Integer resumeFromWp = 0;
@@ -313,6 +315,10 @@ public class Navigator {
 		meas[1] = p[1];
 	}
 
+	public void set_GPS_accuracy(float accuracy) {
+		gpsAccuracy = accuracy;
+	}
+	
 	public void set_V_GPS(double vel) {
 		meas[2] = vel;
 	}
@@ -482,7 +488,15 @@ public class Navigator {
 			}
 		}
 	}
+	
+	public boolean getAutopilot() {
+		return this.autoPilot;
+	}
 
+	public double getRudderAngle() {
+		return this.rudder_angle;
+	}
+	
 	public double getTurnrate() {
 		/*
 		 * pure pursuit algorithm following "Path Tracking for unmanned vehicle
@@ -680,6 +694,10 @@ public class Navigator {
 			return false;
 
 	}
+	
+	public boolean reachedLastWP() {
+		return wpIter.hasNext() == false;
+	}
 
 	public void setWaypoints(File wpPath) {
 		// read waypoint list from file
@@ -699,6 +717,7 @@ public class Navigator {
 				p[0] = Double.valueOf(Double.valueOf(valStr[0]));
 				p[1] = Double.valueOf(Double.valueOf(valStr[1]));
 				this.wp.add(p);
+			br.close();
 			}
 		} catch (IOException ioe) {
 			System.err.println("Could not read waypoint file");
@@ -809,17 +828,14 @@ public class Navigator {
 		double turn_rate = 0;
 		int iter = 0;
 
-		// Starting DC-motor
-		 Message msg = new Message();
-		 msg.what=1;
-		 NavThread.parentHandler.sendMessage(msg);
-
-
 		// 1. While simulation is used prediction is made first
 		// The predicted value is used to create simulated measurements
 		// 2. For real conditions, the measurements are made first and the
 		// prediction is made just before updating the filter
 		// This way a time-step matching the measurements can be choosen
+		
+		NavThread.boundIOIOControlService.startMotor();
+		
 		while (this.active) {
 
 			// Check if waypoint is reached
@@ -903,9 +919,8 @@ public class Navigator {
 			this.configureFilter();
 			iter++;
 		}
-		// stop motor
-		 msg.what=2;
-		 NavThread.parentHandler.sendMessage(msg);
+		
+		NavThread.boundIOIOControlService.stopMotor();
 
 		// write last waypoint index to resume later
 		// If last waypoints has been reached, no resume is wanted
@@ -915,7 +930,7 @@ public class Navigator {
 		// clear waypoint list, to prepare for new instructions
 		this.clearWaypointList();
 		// Switch to manual drive to wait for new instructions
-		this.autoPilot = false;
+		this.setAutopilot(false);
 	}
 
 	public double progressEstimate() {
@@ -1088,19 +1103,7 @@ public class Navigator {
 		long t = 0;
 		double[] pos = { 0, 0 };
 
-		if (!this.simulateGPSSwitch) {
-			// reading position from gpsService
-			if (NavigatorService.pos_timestamp == this.pos_GPS_time()) {
-				return false;
-			} else {
-				//reads static variables from NavigatorService
-				pos[0] = NavigatorService.pos[0];
-				pos[1] = NavigatorService.pos[1];
-				gpsAccuracy = NavigatorService.pos_accuracy;
-				t = NavigatorService.pos_timestamp;
-			}
-		}
-		else {
+		if (this.simulateGPSSwitch) {
 			// simulation of irregular measurements
 			double coinFlip = generator.nextGaussian();
 			if (coinFlip < -0.5)
@@ -1118,15 +1121,14 @@ public class Navigator {
 			pos = this.pos();
 			pos[0] += r1 * this.sigmaX_GPS;
 			pos[1] += r2 * this.sigmaX_GPS;
-		}
-
-		if (this.gpsVelSwitch)
-			this.updateGPSVel(pos, t);
-		if (this.gpsBearingSwitch)
-			this.updateGPSBearing(pos, t);
-		if (this.gpsPositionSwitch) {
-			this.set_pos_GPS(pos);
-			this.set_pos_GPS_time(t);
+			if (this.gpsVelSwitch)
+				this.updateGPSVel(pos, t);
+			if (this.gpsBearingSwitch)
+				this.updateGPSBearing(pos, t);
+			if (this.gpsPositionSwitch) {
+				this.set_pos_GPS(pos);
+				this.set_pos_GPS_time(t);
+			}
 		}
 		return true; // indicates that GPS has been updated
 	}
@@ -1158,19 +1160,19 @@ public class Navigator {
 	}
 
 	public void updateEncoders(double load, double turn_rate) {
-		// TODO: time should be measured here
-		// long t = System.currentTimeMillis();
-		long t = this.predictionTime;
+		long t;
+		if (this.simulateGPSSwitch)
+			t = this.predictionTime;
+		else
+			t = System.currentTimeMillis();
+
 
 		if (this.encoderVelSwitch) {
 			this.load = 85;
 			this.set_V_load(pow(this.load / this.k, 1 / 3.0));
 			this.set_V_load_time(t);
-			// set load
-			Message msg = new Message();
-			msg.what=3;
-			msg.arg1=(int) this.load;
-			NavThread.parentHandler.sendMessage(msg);
+			//TODO: set load
+			NavThread.boundIOIOControlService.setMotorLoad((int) load);
 		}
 
 		if (this.encoderTurnrateSwitch) {
@@ -1178,15 +1180,11 @@ public class Navigator {
 				this.rudder_angle = 0;
 			else
 				this.rudder_angle = turn_rate2angle(turn_rate, this.V());
-
+			
 			this.set_turn_rate_rudder(turn_rate);
 			this.set_turn_rate_rudder_time(t);
-
-			Message msg = new Message();
-			msg.what=4; //set rudder angle
-			msg.arg1=(int) this.rudder_angle;
-			NavThread.parentHandler.sendMessage(msg);
-
+			NavThread.boundIOIOControlService.setRudderAngle(
+					(int) this.getRudderAngle());
 		}
 	}
 
@@ -1194,19 +1192,35 @@ public class Navigator {
 		// Set current time to the predicted time
 		// Take a time-step dt for the predicted time
 		this.lastTime = this.predictionTime;
-		this.predictionTime += this.dt * 1000; // this.dt is expressed in
-												// seconds, is converted to
-												// milliseconds
-		// TODO: wait during
+		
+		try {
+			Thread.sleep(this.predictionTime - System.currentTimeMillis());
+		} catch (InterruptedException e) {
+			Log.e(TAG, "Error while waiting for time update");
+			e.printStackTrace();
+		}
+
+		// this.dt converted from seconds to milliseconds
+		this.predictionTime += this.dt * 1000;
 	}
 
 	public void initGPS() {
-		// TODO: exchange against real GPS-readings
-		double[] p = new double[2];
-		p[0] = -5.0;
-		p[1] = 0;
-		this.lastVelPos = p;
-		this.set_pos(p);
+		if (this.simulateGPSSwitch) {
+			this.set_pos(this.cwp);
+		}
+		else {
+			while(this.get_GPS_timestamp() == 0) {
+				Log.i(TAG, "Waiting for GPS-fix");
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {					
+					Log.e(TAG, "Error while waiting for GPS fix");
+				}
+			}
+				
+		}
+		
+		this.lastVelPos = this.pos();
 	}
 
 	public void initCompass() {
@@ -1367,8 +1381,7 @@ public class Navigator {
 		if (this.autoPilot) {
 			this.setWaypoints(wpPath);
 		} else {
-			//first wp is current pos
-			while (this.wp.size() == 1 && NavigatorService.operative) {
+			while (this.wp.size() == 0 && NavigatorService.operative) {
 				// Waiting for waypoints
 				try {
 					Thread.sleep(1000);
@@ -1386,8 +1399,6 @@ public class Navigator {
 	 * Kalman filter matrices are calculated
 	 */
 	void initNavigation() {
-		// add current pos first in waypoint-list
-
 		// If auto-pilot, resume navigation from last visited waypoint
 		// Checks if resume is < than length of waypoint list
 		if (this.resumeFromWp > 0 && this.autoPilot
@@ -1399,11 +1410,10 @@ public class Navigator {
 			for (int i = 0; i < this.resumeFromWp; i++)
 				this.wpIter.next();
 		} else {
-			this.wp.add(0, this.pos());
 			this.wpIter = this.wp.iterator();
 		}
 
-		this.lwp = this.wpIter.next();// set lwp to first wp (current pos)
+		this.lwp = this.pos();// set lwp to current pos
 		this.cwp = this.wpIter.next(); // set cwp to next wp
 
 		// Navigation - calculate wanted turn rate
@@ -1436,17 +1446,12 @@ public class Navigator {
 	}
 
 	public void finish() {
-		try {
-			// stop motor
-			Message msg = new Message();
-			msg.what=2;
-			NavThread.parentHandler.sendMessage(msg);
-			
+		NavThread.boundIOIOControlService.stopMotor();
+		try {			
 			this.statelog.close();
 			this.measlog.close();
 			this.navlog.close();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 
@@ -1471,6 +1476,14 @@ public class Navigator {
 		this.active = status;
 	}
 	
+	public boolean getActive() {
+		return this.active;
+	}
+	
+	public long get_GPS_timestamp() {
+		return this.timestamps[0];
+	}
+	
 	public void setAutopilot(boolean status) {
 		this.autoPilot = status;
 	}
@@ -1489,6 +1502,8 @@ public class Navigator {
 	}
 	
 	public void addWaypointWGS84(double lon, double lat) {
+		if (this.autoPilot)
+			this.setAutopilot(false);
 		WGS84Position wgsPos = new WGS84Position();
 		wgsPos.setPos(lon, lat);
 		SWEREF99Position rtPos = new SWEREF99Position(wgsPos,
@@ -1501,6 +1516,13 @@ public class Navigator {
 	// Return position in WGS84 lon,lat
 	public double[] getPosWGS84() {
 		SWEREF99Position rtPos = new SWEREF99Position(this.pos()[0], this.pos()[1]);
+		WGS84Position wgsPos = rtPos.toWGS84();
+		double[] projp = { wgsPos.getLongitude(), wgsPos.getLatitude() };
+		return projp;
+	}
+	
+	public double[] getCWPWGS84() {
+		SWEREF99Position rtPos = new SWEREF99Position(this.cwp[0], this.cwp[1]);
 		WGS84Position wgsPos = rtPos.toWGS84();
 		double[] projp = { wgsPos.getLongitude(), wgsPos.getLatitude() };
 		return projp;

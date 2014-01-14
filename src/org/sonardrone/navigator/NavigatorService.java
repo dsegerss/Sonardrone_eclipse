@@ -5,10 +5,22 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import org.apache.http.HttpResponse;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.message.BasicNameValuePair;
 import org.sonardrone.R;
+import org.sonardrone.SonardroneActivity;
+import org.sonardrone.gps.GpsLoggerService;
 import org.sonardrone.ioio.IOIOControlService;
 
 import com.google.android.gms.common.ConnectionResult;
@@ -24,6 +36,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
@@ -39,116 +52,11 @@ import android.widget.Toast;
  * positions from file Controls steering, motors through IOIO Logs depth
  * readings using IOIO While active, a notification will appear on the
  * notification bar, enabling the user to stop the service.
- * 
+ * 00
  * @author David Segersson
  */
 
-enum COMMAND {
-	GET_STATUS,
-	ADD_WP,
-	ADD_SURVEY,
-	CLEAR_WP,
-	CLEAR_SURVEY,
-	SET_RUDDER,
-	SET_LOAD,
-	ACTIVATE,
-	DEACTIVATE,
-	AUTOPILOT,
-	MANUAL,
-	OPERATE,
-	SHUTDOWN,
-	START_MOTOR,
-	STOP_MOTOR
-	};
-	
-class NavThread extends Thread {
-	public	File projectDir; 						//path to project
-	public Navigator nav; 							//navigator object
-	public static Handler parentHandler;			//Handler for messages to parent service
-	private Handler threadHandler = new Handler() {	//Handler for messages to this thread
-		 public void handleMessage(Message msg) {
-			 switch (COMMAND.valueOf(msg.what)) {
-			 case START_MOTOR: 
-				 nav.setMotorLoad(80.0);		 
-			 case STOP_MOTOR:
-				 nav.setMotorLoad(0.0);
-			 case ACTIVATE:
-				 nav.setActive(true);
-			 case DEACTIVATE:
-				 nav.setActive(false);
-			 case SHUTDOWN:
-				 NavigatorService.operative = false;
-			 case SET_LOAD:
-				 nav.setMotorLoad((double) msg.arg1);
-			 case SET_RUDDER:
-				 nav.setRudderAngle((double) msg.arg1);
-			 case AUTOPILOT:
-				 nav.setAutopilot(true);
-			 case MANUAL:
-				 nav.setAutopilot(false);
-			 case ADD_WP:
-				 Bundle posData = msg.getData();
-				 nav.addWaypointWGS84(posData.getDouble("lon"),posData.getDouble("lat"));				 
-			 }
-		 }
-	};
-	
-	public NavThread(String name,File projectDir, Handler parentHandler) {
-		super(name);
-		NavThread.parentHandler = parentHandler;
-		this.projectDir=projectDir;
-		NavigatorService.operative = false;
-	}
-	
-	public Handler getHandler() {
-		return this.threadHandler;
-	}
-	
-    @Override
-    public void run(){   			
-    	// Create the navigator object
-    	this.nav = new Navigator();
-    	
-    	// define paths for project files
-    	File rf = new File(this.projectDir, "settings.rf");
-    	File navLog = new File(this.projectDir, "nav.log");
-    	File stateLog = new File(this.projectDir, "state.log");
-    	File measLog = new File(this.projectDir, "meas.log");
-    	File waypoints = new File(this.projectDir, "waypoints.txt");
-    	
-    	// init measurement logs
-    	this.nav.initLogs(rf, navLog, stateLog, measLog);
-    	
-    	// init sensors, e.g. wait for GPS-fix
-    	this.nav.initSensors();
-
-    	// operation loop
-    	while (NavigatorService.operative) {
-    		//waits (polls) for waypoints if not using autopilot
-   			this.nav.initWaypoints(waypoints);
-
-   			//start from first wp or resume from last visited
-   			this.nav.initNavigation();
-   			
-   			//Start navigation loop
-   			this.nav.run();
-   			
-   			// After reaching last waypoint, shut off autoPilot
-   			if (!this.nav.wpIter.hasNext())
-   				this.nav.autoPilot = false;
-   			}
-   		this.nav.finish();
-
-    	}    
-    }
-
 public class NavigatorService extends Service {
-	public static volatile double[] pos = {0,0};
-	public static volatile long pos_timestamp=0;
-	public static volatile double pos_accuracy=100;
-	public static volatile double phi_compass = 0;
-	public static volatile double rudderangle = 0;
-	public static volatile double load = 0;
 	public static volatile boolean operative=false;
 	private static final String TAG = "NavigatorService";
 	
@@ -159,74 +67,28 @@ public class NavigatorService extends Service {
 	private Map<String, String> rfRowNr = null;
 	
 	private NotificationManager mNM;
-		
-	//bound services
-	private IOIOControlService boundIOIOControlService;
-	private boolean ioioControlServiceIsBound = false;
-	
-	private NavThread navThread;
-	private Handler navThreadHandler;
-	
-	private Handler mainHandler = new Handler() {
-		 public void handleMessage(Message msg) {
-			 switch (COMMAND.valueOf(msg.what)) {
-			 case GET_STATUS:
-				 postStatus();					 
-			 case START_MOTOR:
-				 if(ioioControlServiceIsBound)
-					 boundIOIOControlService.startMotor();
-			 case STOP_MOTOR:
-				 if(ioioControlServiceIsBound)
-					 boundIOIOControlService.stopMotor();
-			 case SET_LOAD:
-				 if(ioioControlServiceIsBound)
-					 boundIOIOControlService.setMotorLoad(msg.arg1);
-			 case SET_RUDDER: 
-				 if(ioioControlServiceIsBound)
-					 boundIOIOControlService.setRudderAngle(msg.arg1);
-			 }
-		 };
-	};
+			
+	private NavThread navThread;	
 	
 	// Our handler for received Intents. This will be called whenever an Intent
 	// with an action named "custom-event-name" is broadcasted.
-	private BroadcastReceiver gcmMessageReceiver = new BroadcastReceiver() {
+	private BroadcastReceiver gcmOperationReceiver = new BroadcastReceiver() {
+	  @SuppressWarnings("incomplete-switch")
 	  @Override
 	  public void onReceive(Context context, Intent intent) {
 	    // Get extra data included in the Intent
 	    String message = intent.getStringExtra("message");
-	    Log.d("gcmMessageReceiver", "got message: " + message);
-	    String[] parts = message.split(";");
-	    String cmd = parts[0];
-	    String val = parts[1];
-
+	    Log.d("gcmOperationReceiver", "got message: " + message);
+	    String cmd = message.split(";")[0];
+	    
 	    switch (COMMAND.valueOf(cmd)) {	    
-	    case GET_STATUS:
-	    	postStatus();
-	    case ADD_WP:
-	    	String[] posStrArray = val.split(" ");
-	    	double[] lon = new double[posStrArray.length];
-	    	double[] lat = new double[posStrArray.length];
-	    	for(int i=0; i<posStrArray.length;i++) {
-	    		lon[i] = Double.parseDouble(posStrArray[i].split(",")[0]);
-	    		lat[i] = Double.parseDouble(posStrArray[i].split(",")[1]);
-	    	}
-	    	addWaypoints(lon, lat);
-	    case ADD_SURVEY:
-	    	String[] posStrArray = val.split(" ");
-	    	double[] lon = new double[posStrArray.length];
-	    	double[] lat = new double[posStrArray.length];
-	    	for(int i=0; i<posStrArray.length;i++) {
-	    		lon[i] = Double.parseDouble(posStrArray[i].split(",")[0]);
-	    		lat[i] = Double.parseDouble(posStrArray[i].split(",")[1]);
-	    	}
-	    	addSurvey(lon, lat);
-	    case SET_LOAD:
-	    	int load = Integer.parseInt(val);
-	    	setMotorLoad(load);
-	    case SET_RUDDER:
-	    	int angle = Integer.parseInt(val);
-	    	setRudderAngle()
+	    case OPERATE:
+	    	NavigatorService.this.broadcastNavCommand("OPERATE");
+	    	break;
+	    case SHUTDOWN:
+	    	NavigatorService.this.broadcastNavCommand("SHUTDOWN");
+	    	break;
+	    }
 	  }
 	};
 
@@ -240,29 +102,11 @@ public class NavigatorService extends Service {
 		
 		this.readConfig();
    			
-		if (this.settings.get("ioioServiceSwitch") == "true") {
-			this.doBindIOIOControlService();
-		}	
-		this.navThread = new NavThread("navigator",this.projectDir,this.mainHandler);
-		this.navThreadHandler = this.navThread.getHandler();
-		LocalBroadcastManager.getInstance(this).registerReceiver(gcmMessageReceiver,
-				new IntentFilter("gcm-intent"));
+		this.navThread = new NavThread("navigator",this.projectDir,this);
+		LocalBroadcastManager.getInstance(this).registerReceiver(gcmOperationReceiver,
+				new IntentFilter("GCM_COMMAND"));
 	}
-
-	// onStop{}
-	// try {
-	// nav.statelog.close();
-	// nav.measlog.close();
-	// nav.navlog.close();
-	// } catch (IOException e) {
-	// // TODO Auto-generated catch block,
-	// e.printStackTrace();
-	// }
 	
-	public void sendNavMessage(Message msgToThread) {
-        this.navThreadHandler.sendMessage(msgToThread);
-	}
-
 	@Override
 	public void onStart(Intent intent, int startId) {
 		super.onStart(intent, startId);
@@ -291,7 +135,6 @@ public class NavigatorService extends Service {
 		}
 	}
 	
-	
 	public void operate() {
 		NavigatorService.operative=true;
 		this.navThread.run();
@@ -301,7 +144,6 @@ public class NavigatorService extends Service {
 		NavigatorService.operative=false;
 	}
 	
-
 	private void readConfig() {
 		// resource file object
 		File rf = new File(this.projectDir, "settings.txt");
@@ -365,20 +207,14 @@ public class NavigatorService extends Service {
 	
 	@Override
 	public void onDestroy() {
-		// Release bound services
-		doUnbindServices();
-
-		// close logs and clean-up
-		Message msg = new Message();
-		msg.what=0;
-		this.sendNavMessage(msg);
-
+		broadcastNavCommand("SHUTDOWN");
+		
 		// Cancel the persistent notification.
 		mNM.cancel(0);
 
 		// Tell the user we stopped.
 		Toast.makeText(this, "Navigator stopped!", Toast.LENGTH_SHORT).show();
-		LocalBroadcastManager.getInstance(this).unregisterReceiver(gcmMessageReceiver);
+		LocalBroadcastManager.getInstance(this).unregisterReceiver(gcmOperationReceiver);
 		
 		super.onDestroy();
 	}
@@ -408,39 +244,12 @@ public class NavigatorService extends Service {
 		// cancel.
 		mNM.notify(0, notification);
 	}
-
+	
 	@Override
 	public IBinder onBind(Intent arg0) {
 		return mBinder;
 	}
 
-	private ServiceConnection ioioControlServiceConnection = new ServiceConnection() {
-		public void onServiceConnected(ComponentName className, IBinder service) {
-			boundIOIOControlService = ((IOIOControlService.LocalBinder) service)
-					.getService();
-		}
-
-		public void onServiceDisconnected(ComponentName className) {
-			boundIOIOControlService = null;
-		}
-	};
-
-	private void doBindIOIOControlService() {
-		Intent intent = new Intent(this, IOIOControlService.class);
-		bindService(intent, ioioControlServiceConnection,
-				Context.BIND_AUTO_CREATE);
-		ioioControlServiceIsBound = true;
-	}
-	
-	private void doUnbindServices() {
-
-		if (ioioControlServiceIsBound) {
-			// Detach our existing connection.
-			unbindService(ioioControlServiceConnection);
-			ioioControlServiceIsBound = false;
-
-		}
-	}
 
 	// This is the object that receives interactions from clients. See
 	// RemoteService for a more complete example.
@@ -454,103 +263,34 @@ public class NavigatorService extends Service {
 		public NavigatorService getService() {
 			return NavigatorService.this;
 		}
-	}
+	};
 
-	public void setMotorLoad(int loadPercentage) {
-		// set motor power output in percentage
-		if (this.ioioControlServiceIsBound)
-			this.boundIOIOControlService.setMotorLoad(loadPercentage);
-		// set state
-		Message msg = new Message();
-		msg.what = 6;
-		msg.arg1 = loadPercentage;
-		this.sendNavMessage(msg);
+	private void broadcastNavCommand(String command){
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
 	}
 	
-	public void setRudderAngle(int rudderAngle) {
-		// set motor power output in percentage
-		if (this.ioioControlServiceIsBound)
-			this.boundIOIOControlService.setRudderAngle(rudderAngle);
-		// set state
-		Message msg = new Message();
-		msg.what = 6;
-		msg.arg1 = rudderAngle;
-		this.sendNavMessage(msg);
+	public void broadcastNavCommandDouble(String command, double value) {
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    intent.putExtra("value", value);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
 	}
 	
-	public void startMotor() {
-		if (this.ioioControlServiceIsBound)
-			this.boundIOIOControlService.startMotor();
-		Message msg = new Message();
-		msg.what = 1;
-		this.sendNavMessage(msg);		
+	public void broadcastNavCommandBoolean(String command, boolean value) {
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    intent.putExtra("value", value);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
 	}
 	
-	public void stopMotor(){
-		if (this.ioioControlServiceIsBound)
-			this.boundIOIOControlService.stopMotor();
-		Message msg = new Message();
-		msg.what = 2;
-		this.sendNavMessage(msg);		
+	public void broadcastNavCommandPosArray(String command, double[] lon, double[] lat) {
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    intent.putExtra("lon", lon);
+	    intent.putExtra("lat", lat);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
 	}
 	
-	public void setAutopilot(boolean autoPilotActive) {
-		// set state
-		Message msg = new Message();
-		if (autoPilotActive)			
-			msg.what = 8;
-		else
-			msg.what=9;
-		this.sendNavMessage(msg);
-	}
-	
-	public void setActive(boolean navigatorActive) {
-		// set state
-		Message msg = new Message();
-		if (navigatorActive)			
-			msg.what = 3;
-		else
-			msg.what=4;
-		this.sendNavMessage(msg);
-	}
-
-	public void shutDown() {
-		// set state
-		Message msg = new Message();
-		msg.what = 5;
-		this.sendNavMessage(msg);
-	}
-	
-	public void postStatus() {
-
-	}
-
-	public void addWaypoints(double[] lon, double[] lat) {
-		// set state
-		Message msg = new Message();
-		msg.what = 11;
-		Bundle data = new Bundle();
-		data.putDoubleArray("lon", lon);
-		data.putDoubleArray("lat", lat);
-		msg.setData(data);
-		this.sendNavMessage(msg);		
-	}
-
-	public void updatePos(double[] pos,long timestamp,float accuracy) {
-		NavigatorService.pos_timestamp=timestamp;
-		NavigatorService.pos=pos;
-		NavigatorService.pos_accuracy=(double) accuracy;
-	}
-		
-	public void updatePhi(double phi_compass) {
-		NavigatorService.phi_compass = phi_compass;
-	}
-
-	public void updateRudderAngle(double rudderAngle) {
-		NavigatorService.rudderangle = rudderAngle;
-	}
-	
-	public void updateLoad(double load) {
-		NavigatorService.load = load;
-	}	
 }

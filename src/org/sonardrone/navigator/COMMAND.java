@@ -1,0 +1,17 @@
+package org.sonardrone.navigator;
+public enum COMMAND {
+	GET_STATUS,
+	ADD_WP,
+	ADD_SURVEY,
+	SET_RUDDER,
+	SET_LOAD,
+	ACTIVATE,
+	DEACTIVATE,
+	AUTOPILOT,
+	MANUAL,
+	OPERATE,
+	SHUTDOWN,
+	START_MOTOR,
+	STOP_MOTOR
+	};
+	

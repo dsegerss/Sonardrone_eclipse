@@ -33,6 +33,7 @@ import android.location.LocationProvider;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -60,21 +61,6 @@ public class GpsLoggerService extends Service {
 	private static boolean showingDebugToast = false;
 
 	private NotificationManager mNM;
-	
-	public NavigatorService boundNavigatorService;
-	private boolean navigatorServiceIsBound = false;
-
-	public double[] getPos() {
-		return this.locationListener.pos;
-	}
-
-	public long getTimestamp() {
-		return this.locationListener.timestamp;
-	}
-
-	public float getAccuracy() {
-		return this.locationListener.accuracy;
-	}
 
 	@Override
 	public void onCreate() {
@@ -90,9 +76,6 @@ public class GpsLoggerService extends Service {
 	@Override
 	public void onDestroy() {
 		super.onDestroy();
-		// Release bound services
-		doUnbindServices();
-
 		shutdownGpsLoggerService();
 
 		// Cancel the persistent notification.
@@ -139,11 +122,6 @@ public class GpsLoggerService extends Service {
 		}
 		locationListener.initLog(this.measlog);
 		
-		if (this.settings.get("navigatorServiceSwitch") == "true") {
-			this.doBindNavigatorService();
-   		}
-
-
 	}
 
 	private void readConfig() {
@@ -207,19 +185,19 @@ public class GpsLoggerService extends Service {
 		 */
 	}
 
-	public class MyLocationListener implements LocationListener {
+	private class MyLocationListener implements LocationListener {
 		// last fix
-		public double[] pos = { 0, 0 };
-		public long timestamp = 0;
-		public float accuracy = 100;
+		private double[] pos = { 0, 0 };
+		private long timestamp = 0;
+		private float accuracy = 100;
 
-		public FileWriter gpslog = null;
+		private FileWriter gpslog = null;
 
-		public void initLog(FileWriter log) {
+		private void initLog(FileWriter log) {
 			this.gpslog = log;
 		}
 
-		public double[] project(String projName, double[] point) {
+		private double[] project(String projName, double[] point) {
 			/*
 			 * Project lat-lon to given projection
 			 */
@@ -250,7 +228,7 @@ public class GpsLoggerService extends Service {
 						this.pos[1] = proj_pos[1];
 						this.timestamp = System.currentTimeMillis();
 						this.accuracy = loc.getAccuracy();
-						updatePos();
+						sendLocationUpdatedBroadcast();
 
 						GregorianCalendar greg = new GregorianCalendar();
 						// TimeZone tz = greg.getTimeZone();
@@ -316,6 +294,14 @@ public class GpsLoggerService extends Service {
 			}
 		}
 
+		private void sendLocationUpdatedBroadcast(){
+			Intent intent = new Intent("LOCATION_UPDATED");
+		    intent.putExtra("pos", this.pos);
+		    intent.putExtra("accuracy", this.accuracy);
+		    intent.putExtra("timestamp", this.timestamp);
+		    LocalBroadcastManager.getInstance(GpsLoggerService.this).sendBroadcastSync(intent);
+		}
+		
 		public void onProviderDisabled(String provider) {
 			if (showingDebugToast)
 				Toast.makeText(getBaseContext(),
@@ -358,31 +344,6 @@ public class GpsLoggerService extends Service {
 		return mBinder;
 	}
 	
-	private ServiceConnection navigatorServiceConnection = new ServiceConnection() {
-		public void onServiceConnected(ComponentName className, IBinder service) {
-			boundNavigatorService = ((NavigatorService.LocalBinder) service)
-					.getService();
-		}
-		public void onServiceDisconnected(ComponentName className) {
-			boundNavigatorService = null;
-		}
-	};
-
-	private void doBindNavigatorService() {
-		Intent intent = new Intent(this, NavigatorService.class);
-		bindService(intent, navigatorServiceConnection,
-				Context.BIND_AUTO_CREATE);
-		navigatorServiceIsBound = true;
-	}
-	
-	private void doUnbindServices() {
-		if (navigatorServiceIsBound) {
-			// Detach our existing connection.
-			unbindService(navigatorServiceConnection);
-			navigatorServiceIsBound = false;
-		}
-	}
-
 	/*
 	 * Class for clients to access. Because we know this service always runs in
 	 * the same process as its clients, we don't need to deal with IPC.
@@ -424,15 +385,5 @@ public class GpsLoggerService extends Service {
 		// We use a layout id because it is a unique number. We use it later to
 		// cancel.
 		mNM.notify(0, notification);
-	}
-	
-	public void updatePos() {
-		if(this.navigatorServiceIsBound) {
-			this.boundNavigatorService.updatePos(
-					this.locationListener.pos,
-					this.locationListener.timestamp,
-					this.locationListener.accuracy);
-		}
-		
-	}
+	}	
 }

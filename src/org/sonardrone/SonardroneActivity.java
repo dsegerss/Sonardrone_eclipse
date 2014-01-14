@@ -23,7 +23,6 @@ import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.message.BasicNameValuePair;
-import org.sonardrone.chat.ChatService;
 import org.sonardrone.gps.GpsLoggerService;
 import org.sonardrone.ioio.IOIOControlService;
 import org.sonardrone.navigator.NavigatorService;
@@ -34,18 +33,17 @@ import com.google.android.gms.gcm.GoogleCloudMessaging;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ComponentName;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.IBinder;
+import android.support.v4.content.LocalBroadcastManager;
 import android.text.Editable;
 import android.util.Log;
 import android.view.View;
@@ -61,11 +59,11 @@ public class SonardroneActivity extends Activity {
 	//GCM init
     public static final String EXTRA_MESSAGE = "message";
     public static final String PROPERTY_REG_ID = "registration_id";
-    private static final String PROPERTY_APP_VERSION = "appVersion";
-    private final static int PLAY_SERVICES_RESOLUTION_REQUEST = 9000;
-
-    String SENDER_ID = "539926077370"; //Project ID from API console
-    String DRONECENTRAL_URL = "drone_central_url";
+    public static final String PROPERTY_APP_VERSION = "appVersion";
+    public static final int PLAY_SERVICES_RESOLUTION_REQUEST = 9000;
+    public static final String SENDER_ID = "539926077370"; //Project ID from API console
+    public static final String DRONECENTRAL_URL = "drone_central_url";
+    
     TextView mDisplay;
     GoogleCloudMessaging gcm;
     AtomicInteger msgId = new AtomicInteger();
@@ -84,107 +82,16 @@ public class SonardroneActivity extends Activity {
 	private File settingsTemplate = new File(this.rootDir, ".settings.txt");
 	static final int DELETE_PROJECT_ID = 1;
 
-	private boolean gpsLoggerServiceIsBound = false;
-	private boolean ioioControlServiceIsBound = false;
-	private boolean navigatorServiceIsBound = false;
-
-
-	private GpsLoggerService boundGpsLoggerService;
-	private IOIOControlService boundIOIOControlService;
-	private NavigatorService boundNavigatorService;
-
-	private ServiceConnection gpsLoggerServiceConnection = new ServiceConnection() {
-		public void onServiceConnected(ComponentName className, IBinder service) {
-			boundGpsLoggerService = ((GpsLoggerService.LocalBinder) service)
-					.getService();
-			gpsLoggerServiceIsBound=true;
-			Log.d(TAG, "onServiceConnected");
-		}
-
-		public void onServiceDisconnected(ComponentName className) {
-			// called when the connection with the service has been
-			// unexpectedly disconnected -- that is, its process crashed.
-			// Because it is running in our same process, we should never
-			// see this happen.
-			boundGpsLoggerService = null;
-			gpsLoggerServiceIsBound=false;
-			Log.e(TAG, "onServiceDisconnected");
-		}
+	@SuppressWarnings("unused")
+	private BroadcastReceiver locationReceiver = new BroadcastReceiver() {
+	    @Override
+	    public void onReceive(Context context, Intent intent) {
+	    	SonardroneActivity.this.setGPS(
+	    			intent.getDoubleArrayExtra("pos"),
+	        		intent.getLongExtra("timestamp", 0),	
+	        		intent.getFloatExtra("accuracy", 0));
+	    }
 	};
-
-	private ServiceConnection ioioControlServiceConnection = new ServiceConnection() {
-		public void onServiceConnected(ComponentName className, IBinder service) {
-			boundIOIOControlService = ((IOIOControlService.LocalBinder) service)
-					.getService();
-		}
-
-		public void onServiceDisconnected(ComponentName className) {
-			boundIOIOControlService = null;
-		}
-	};
-	
-	private ServiceConnection navigatorServiceConnection = new ServiceConnection() {
-		public void onServiceConnected(ComponentName className, IBinder service) {
-			boundNavigatorService = ((NavigatorService.LocalBinder) service)
-					.getService();
-		}
-
-		public void onServiceDisconnected(ComponentName className) {
-			// called when the connection with the service has been
-			// unexpectedly disconnected -- that is, its process crashed.
-			// Because it is running in our same process, we should never
-			// see this happen.
-			boundNavigatorService = null;
-		}
-	};
-
-
-	void doBindGpsLoggerService() {
-		Intent intent = new Intent(this, GpsLoggerService.class);
-		bindService(intent, gpsLoggerServiceConnection,
-				Context.BIND_AUTO_CREATE);
-	}
-
-	void doBindIOIOControlService() {
-		Intent intent = new Intent(this, IOIOControlService.class);
-		bindService(intent, ioioControlServiceConnection,
-				Context.BIND_AUTO_CREATE);
-		ioioControlServiceIsBound = true;
-	}
-	
-	void doBindNavigatorService() {
-		Intent intent = new Intent(this, NavigatorService.class);
-		bindService(intent, navigatorServiceConnection,
-				Context.BIND_AUTO_CREATE);
-		navigatorServiceIsBound = true;
-	}
-
-
-	void doUnbindGPSService() {
-		if (gpsLoggerServiceIsBound) {
-			// Detach our existing connection.
-			unbindService(gpsLoggerServiceConnection);
-		}
-		gpsLoggerServiceIsBound=false;
-	}
-
-	void doUnbindIOIOService() {
-		if (ioioControlServiceIsBound) {
-			// Detach our existing connection.
-			unbindService(ioioControlServiceConnection);
-			ioioControlServiceIsBound = false;
-
-		}
-	}
-	
-	void doUnbindNavigatorService() {
-		if (navigatorServiceIsBound) {
-			// Detach our existing connection.
-			unbindService(navigatorServiceConnection);
-			navigatorServiceIsBound = false;
-
-		}
-	}
 
 	private boolean checkPlayServices() {
 	    int resultCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
@@ -345,7 +252,7 @@ public class SonardroneActivity extends Activity {
 	    } catch (ClientProtocolException e) {
 	    	Log.i(TAG, "Error when registring to dronecentral: " + e.getMessage());
 	    } catch (IOException e) {
-	        // TODO Auto-generated catch block
+	    	Log.i(TAG, "Error when registring to dronecentral: " + e.getMessage());
 	    }
 	}
 	
@@ -376,38 +283,12 @@ public class SonardroneActivity extends Activity {
 	}
 
 	public void onStop(){
-		super.onStop();
-		if(this.gpsLoggerServiceIsBound)
-			this.doUnbindGPSService();
-		if(this.ioioControlServiceIsBound)
-			this.doUnbindIOIOService();
-		if(this.navigatorServiceIsBound)
-			this.doUnbindNavigatorService();		
+		super.onStop();		
 	}
 	
 	public void onStart(){
-		super.onStart();
-		
-		//bind to running services
-		CompoundButton toggleButton = null;
-		Intent intent = null;
-	
-		toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
-		intent = new Intent(SonardroneActivity.this, NavigatorService.class);
-		if(toggleButton.isChecked())
-			this.doBindNavigatorService();
-			
-		toggleButton = (CompoundButton) findViewById(R.id.gpsToggleButton);
-		intent = new Intent(SonardroneActivity.this, GpsLoggerService.class);
-		if(toggleButton.isChecked())
-			this.doBindGpsLoggerService();
-		
-		toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
-		intent = new Intent(SonardroneActivity.this,IOIOControlService.class);
-		if(toggleButton.isChecked())
-			this.doBindIOIOControlService();
+		super.onStart();		
 	}
-
 	
 	private boolean isExternalStoragePresent() {
 		boolean mExternalStorageAvailable = false;
@@ -878,18 +759,10 @@ public class SonardroneActivity extends Activity {
 			intent = new Intent(SonardroneActivity.this,
 					IOIOControlService.class);
 			break;
-		case R.id.chatToggleButton:
-			toggleButton = (CompoundButton) findViewById(R.id.chatToggleButton);
-			intent = new Intent(SonardroneActivity.this,
-					ChatService.class);
-			break;
 		case R.id.operateToggleButton:
 			toggleButton = (CompoundButton) findViewById(R.id.operateToggleButton);
-			
-			if(!this.navigatorServiceIsBound)
-				this.runButtonClickHandler(findViewById(R.id.navToggleButton));
 			if(toggleButton.isChecked())
-				this.boundNavigatorService.operate();
+				this.broadcastNavCommand("OPERATE");
 			break;
 		}
 
@@ -901,26 +774,39 @@ public class SonardroneActivity extends Activity {
 			this.getUIConfig();
 			this.writeConfig();
 			startService(intent);
-			// Bind to corresponding service
-			if (R.id.gpsToggleButton == view.getId())
-				doBindGpsLoggerService();
-			if (R.id.ioioToggleButton == view.getId())
-				doBindIOIOControlService();
-			if (R.id.navToggleButton == view.getId())
-				doBindNavigatorService();
-
 		} else {
-			if (R.id.gpsToggleButton == view.getId())
-				doUnbindGPSService();
-			if (R.id.ioioToggleButton == view.getId())
-				doUnbindIOIOService();
-			if (R.id.navToggleButton == view.getId())
-				doUnbindNavigatorService();
 			stopService(intent);
 		}
 
 	}
-
+	
+	private void broadcastNavCommand(String command){
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
+	}
+	
+	public void broadcastNavCommandDouble(String command, double value) {
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    intent.putExtra("value", value);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
+	}
+	
+	public void broadcastNavCommandBoolean(String command, boolean value) {
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    intent.putExtra("value", value);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
+	}
+	
+	public void broadcastNavCommandPosArray(String command, double[] lon, double[] lat) {
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    intent.putExtra("lon", lon);
+	    intent.putExtra("lat", lat);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
+	}
 	public void testRudder(View view) {
 		// Check if ioio service is running, if not - toggle service button
 		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
@@ -932,7 +818,7 @@ public class SonardroneActivity extends Activity {
 				.valueOf(((EditText) findViewById(R.id.rudderAngleEditText))
 						.getEditableText().toString());
 
-		this.boundIOIOControlService.setRudderAngle(rudderAngle);
+		this.broadcastNavCommandDouble("SET_RUDDER", rudderAngle);
 	}
 	
 	public void testMotor(View view) {
@@ -945,45 +831,25 @@ public class SonardroneActivity extends Activity {
 		Integer motorLoad = Integer
 				.valueOf(((EditText) findViewById(R.id.motorLoadEditText))
 						.getEditableText().toString());
-
-		this.boundIOIOControlService.setMotorLoad(motorLoad);
+		this.broadcastNavCommandDouble("SET_LOAD", motorLoad);
 	}
 
-	public void readGPS(View view) {
-		Log.d(TAG,"readGPS");
-		// Check if gps service is running, if not - toggle service button
-		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.gpsToggleButton);
-		if (!toggleButton.isChecked()) {
-			toggleButton.setChecked(true);
-			runButtonClickHandler(findViewById(R.id.gpsToggleButton));
-		}
+	public void setGPS(double[] pos, long timestamp, float accuracy) {
+		Log.d(TAG,"setGPS");
 		TextView textview = (TextView) findViewById(R.id.XYAccuracyTextView);
 
-		if(!this.gpsLoggerServiceIsBound)
-			this.doBindGpsLoggerService();
-		
-		if(this.gpsLoggerServiceIsBound) {
-			String accuracy = String.valueOf(this.boundGpsLoggerService
-					.getAccuracy());
-			double[] pos = this.boundGpsLoggerService.getPos();
-
-			String gpsStatus;
-			if (pos != null) {
-				gpsStatus = String.format("%d,%d,%s", (int) pos[0], (int) pos[1],accuracy);
-			} else {
-				gpsStatus = "-,-,-";
-			}
-			textview.setText((CharSequence) gpsStatus);
-		}
-		else
-			Log.e(TAG,"GPS service not bound");
+		String gpsStatus;
+		gpsStatus = String.format("X:%d,Y:%d,a:%s,t:%s",
+				(int) pos[0],
+				(int) pos[1],
+				String.valueOf(accuracy),
+				String.valueOf(timestamp));
+		textview.setText((CharSequence) gpsStatus);
 	}
 
 	public void onDestroy() {
 		super.onDestroy();
-		this.doUnbindGPSService();
-		this.doUnbindIOIOService();
-		this.doUnbindNavigatorService();	
+			
 
 		//bind to running services
 		CompoundButton toggleButton = null;
