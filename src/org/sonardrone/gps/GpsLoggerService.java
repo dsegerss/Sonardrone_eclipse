@@ -14,7 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.sonardrone.R;
-import org.sonardrone.navigator.NavigatorService;
+import org.sonardrone.SonardroneActivity;
 import org.sonardrone.proj.positions.SWEREF99Position;
 import org.sonardrone.proj.positions.WGS84Position;
 
@@ -22,10 +22,8 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -33,6 +31,7 @@ import android.location.LocationProvider;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
 import android.widget.Toast;
@@ -66,6 +65,7 @@ public class GpsLoggerService extends Service {
 	public void onCreate() {
 		super.onCreate();
 		startGpsLoggerService();
+		this.sendServiceStateBroadcast(true);
 		mNM = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 		// Display a notification about us starting. We put an icon in the
 		// status bar.
@@ -77,7 +77,8 @@ public class GpsLoggerService extends Service {
 	public void onDestroy() {
 		super.onDestroy();
 		shutdownGpsLoggerService();
-
+		//update activity gui
+		this.sendServiceStateBroadcast(false);
 		// Cancel the persistent notification.
 		mNM.cancel(0);
 
@@ -93,7 +94,7 @@ public class GpsLoggerService extends Service {
 		locationListener = new MyLocationListener();
 		lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, minTimeMillis,
 				minDistanceMeters, locationListener);
-		System.out.println("Started location manager");
+		Log.d(tag, "Started location manager");
 	}
 
 	private void shutdownGpsLoggerService() {
@@ -108,7 +109,7 @@ public class GpsLoggerService extends Service {
 
 		this.projectDir = new File(
 				(String) intent.getCharSequenceExtra("projectDir"));
-		System.out.println(String.format("Project dir is: %s",
+		Log.d(tag, String.format("Project dir is: %s",
 				this.projectDir.toString()));
 
 		this.readConfig();
@@ -118,7 +119,7 @@ public class GpsLoggerService extends Service {
 		try {
 			this.measlog = new FileWriter(measLogPath);
 		} catch (Exception e) {// Catch exception if any
-			System.err.println("Error: " + e.getMessage());
+			Log.e(tag, "Error: " + e.getMessage());
 		}
 		locationListener.initLog(this.measlog);
 		
@@ -132,7 +133,7 @@ public class GpsLoggerService extends Service {
 		this.settings = new HashMap<String, String>();
 
 		BufferedReader reader = null;
-		System.out.println("Reading resources");
+		Log.d(tag, "Reading resources");
 		try {
 			reader = new BufferedReader(new FileReader(rf));
 			String row;
@@ -150,10 +151,10 @@ public class GpsLoggerService extends Service {
 				rownr += 1;
 			}
 		} catch (FileNotFoundException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(tag, "Error: " + e.getMessage());
 			System.exit(1);
 		} catch (IOException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(tag, "Error: " + e.getMessage());
 			System.exit(1);
 		} finally {
 			try {
@@ -161,7 +162,7 @@ public class GpsLoggerService extends Service {
 					reader.close();
 				}
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
+				Log.e(tag, "Error: " + e.getMessage());
 				System.exit(1);
 			}
 		}
@@ -183,6 +184,13 @@ public class GpsLoggerService extends Service {
 		 * 
 		 * //todo: check for all required parameters
 		 */
+	}
+
+	private void sendServiceStateBroadcast(boolean state){
+		Intent intent = new Intent("SERVICE_STATE");
+	    intent.putExtra("SERVICE", "GpsLoggerService");
+	    intent.putExtra("STATE", state);
+	    LocalBroadcastManager.getInstance(GpsLoggerService.this).sendBroadcastSync(intent);
 	}
 
 	private class MyLocationListener implements LocationListener {
@@ -218,6 +226,7 @@ public class GpsLoggerService extends Service {
 					// if (loc.hasAccuracy()
 					// && loc.getAccuracy() <= minAccuracyMeters) {
 					if (true) {
+						Log.d(tag, "Position updated");
 						pointIsRecorded = true;
 
 						double[] geo_pos = { loc.getLongitude(),
@@ -250,7 +259,6 @@ public class GpsLoggerService extends Service {
 
 						this.gpslog.write(msg);
 						this.gpslog.flush();
-						System.out.print(msg);
 					}
 				} catch (Exception e) {
 					Log.e(tag, e.toString());
@@ -301,7 +309,7 @@ public class GpsLoggerService extends Service {
 		    intent.putExtra("timestamp", this.timestamp);
 		    LocalBroadcastManager.getInstance(GpsLoggerService.this).sendBroadcastSync(intent);
 		}
-		
+				
 		public void onProviderDisabled(String provider) {
 			if (showingDebugToast)
 				Toast.makeText(getBaseContext(),
@@ -327,7 +335,7 @@ public class GpsLoggerService extends Service {
 			if (status == LocationProvider.OUT_OF_SERVICE)
 				showStatus = "Out of Service";
 			if (status != lastStatus && showingDebugToast) {
-				Toast.makeText(getBaseContext(), "new status: " + showStatus,
+				Toast.makeText(GpsLoggerService.this, "new status: " + showStatus,
 						Toast.LENGTH_SHORT).show();
 			}
 			lastStatus = status;
@@ -358,32 +366,46 @@ public class GpsLoggerService extends Service {
 	 * Show a notification while this service is running.
 	 */
 	private void showNotification() {
-		// In this sample, we'll use the same text for the ticker and the
-		// expanded notification
 		CharSequence text = "GPS-logger active!";
+		
+		// prepare intent which is triggered if the
+		// notification is selected
+		Intent intent = new Intent(this, SonardroneActivity.class);
+		PendingIntent pIntent = PendingIntent.getActivity(this, 0, intent, 0);
+		
+		// build notification
+		// the addAction re-use the same intent to keep the example short
+		Notification n  = new NotificationCompat.Builder(this)
+		        .setContentTitle(text)
+		        .setContentText("GpsLoggerService is logging positions")
+		        .setSmallIcon(R.drawable.gpslogger16)
+		        .setContentIntent(pIntent)
+		        .addAction(R.drawable.gpslogger16, "Go to activity", pIntent).build();
+		    		  
+		this.mNM.notify(0, n);
 
 		// Set the icon, scrolling text and timestamp
-		Notification notification = new Notification(R.drawable.gpslogger16,
-				text, System.currentTimeMillis());
+		//Notification notification = new Notification(R.drawable.gpslogger16,
+		//		text, System.currentTimeMillis());
 
-		notification.setLatestEventInfo(this, "GPS-Service", "Click to stop",
-				PendingIntent.getService(this, 0, new Intent(
-						"stop", null, this, this.getClass()), 0));
+		//notification.setLatestEventInfo(this, "GPS-Service", "Click to stop",
+		//		PendingIntent.getService(this, 0, new Intent(
+		//				"stop", null, this, this.getClass()), 0));
 		
 		// The PendingIntent to launch our activity if the user selects this
 		// notification
-		PendingIntent contentIntent = PendingIntent.getActivity(this, 0,
-				new Intent(this, GpsLoggerService.class), 0);
+		//PendingIntent contentIntent = PendingIntent.getActivity(this, 0,
+		//new Intent(this, GpsLoggerService.class), 0);
 
 		// Set the info for the views that show in the notification panel.
 		//notification.setLatestEventInfo(this, "GpsLoggerService", text,
 		//		contentIntent);
 		
-		notification.flags |= Notification.FLAG_ONGOING_EVENT;
+		//notification.flags |= Notification.FLAG_ONGOING_EVENT;
 
 		// Send the notification.
 		// We use a layout id because it is a unique number. We use it later to
 		// cancel.
-		mNM.notify(0, notification);
+		//mNM.notify(0, notification);
 	}	
 }

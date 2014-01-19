@@ -5,43 +5,25 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.ClientProtocolException;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.impl.client.DefaultHttpClient;
-import org.apache.http.message.BasicNameValuePair;
+
 import org.sonardrone.R;
 import org.sonardrone.SonardroneActivity;
-import org.sonardrone.gps.GpsLoggerService;
-import org.sonardrone.ioio.IOIOControlService;
-
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GooglePlayServicesUtil;
 
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.ServiceConnection;
-import android.content.SharedPreferences;
+
 import android.os.Binder;
-import android.os.Bundle;
-import android.os.Handler;
 import android.os.IBinder;
-import android.os.Message;
+import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
 import android.widget.Toast;
@@ -83,14 +65,22 @@ public class NavigatorService extends Service {
 	    
 	    switch (COMMAND.valueOf(cmd)) {	    
 	    case OPERATE:
+	    	Log.d(TAG, "Broadcasted OPERATE from Navigator Service");
 	    	NavigatorService.this.broadcastNavCommand("OPERATE");
 	    	break;
 	    case SHUTDOWN:
+	    	Log.d(TAG, "Broadcasted SHUTDOWN from Navigator Service");
 	    	NavigatorService.this.broadcastNavCommand("SHUTDOWN");
 	    	break;
 	    }
 	  }
 	};
+	
+	@Override
+	public int onStartCommand (Intent intent, int flags, int startId){
+	    this.projectDir = new File(intent.getStringExtra("projectDir"));
+	    return START_STICKY;
+	}
 
 	@Override
 	public void onCreate() {
@@ -98,10 +88,8 @@ public class NavigatorService extends Service {
 		mNM = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 		// Display a notification about us starting. We put an icon in the
 		// status bar.
-		showNotification();
-		
+
 		this.readConfig();
-   			
 		this.navThread = new NavThread("navigator",this.projectDir,this);
 		LocalBroadcastManager.getInstance(this).registerReceiver(gcmOperationReceiver,
 				new IntentFilter("GCM_COMMAND"));
@@ -110,31 +98,41 @@ public class NavigatorService extends Service {
 	@Override
 	public void onStart(Intent intent, int startId) {
 		super.onStart(intent, startId);
-		NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-		if (intent != null && intent.getAction() != null
-				&& intent.getAction().equals("stop")) {
-			// User clicked the notification. Need to stop the service.
-			nm.cancel(0);
-			stopSelf();
-		} else {
-			// Service starting. Create a notification.
-			Notification notification = new Notification(
-					R.drawable.ic_launcher, "Navigator running",
-					System.currentTimeMillis());
-			notification
-					.setLatestEventInfo(this, "Navigator service",
-							"Click to stop", PendingIntent.getService(
-									this,
-									0,
-									new Intent("stop", null, this, this
-											.getClass()), 0));
-			notification.flags |= Notification.FLAG_ONGOING_EVENT;
-			nm.notify(0, notification);
-			this.projectDir = new File(
-					(String) intent.getCharSequenceExtra("projectDir"));
-		}
+		showNotification();	
+		this.projectDir = new File(
+				(String) intent.getCharSequenceExtra("projectDir"));
+		this.sendServiceStateBroadcast(true);
 	}
 	
+	private void showNotification() {
+		// In this sample, we'll use the same text for the ticker and the
+				// expanded notification
+		CharSequence text = "Navigator service active!";
+				
+		// prepare intent which is triggered if the
+		// notification is selected
+
+		Intent intent = new Intent(this, SonardroneActivity.class);
+		PendingIntent pIntent = PendingIntent.getActivity(this, 0, intent, 0);
+
+		// build notification
+		// the addAction re-use the same intent to keep the example short
+		Notification n  = new NotificationCompat.Builder(this)
+				.setContentTitle(text)
+				.setContentText("Navigator service is running")
+				.setSmallIcon(R.drawable.ic_stat_device_access_location_found)
+				.setContentIntent(pIntent)
+				.addAction(R.drawable.ic_stat_action_settings, "Go to activity", pIntent).build();
+		
+		mNM.notify(0, n);	
+	}
+	
+	private void sendServiceStateBroadcast(boolean state){
+		Intent intent = new Intent("SERVICE_STATE");
+	    intent.putExtra("SERVICE", "NavigatorService");
+	    intent.putExtra("STATE", state);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
+	}
 	public void operate() {
 		NavigatorService.operative=true;
 		this.navThread.run();
@@ -152,7 +150,7 @@ public class NavigatorService extends Service {
 		this.settings = new HashMap<String, String>();
 
 		BufferedReader reader = null;
-		System.out.println("Reading resources");
+		Log.d(TAG,"Reading resources");
 		try {
 			reader = new BufferedReader(new FileReader(rf));
 			String row;
@@ -170,10 +168,10 @@ public class NavigatorService extends Service {
 				rownr += 1;
 			}
 		} catch (FileNotFoundException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(TAG,"Error: " + e.getMessage());
 			System.exit(1);
 		} catch (IOException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(TAG,"Error: " + e.getMessage());
 			System.exit(1);
 		} finally {
 			try {
@@ -181,7 +179,7 @@ public class NavigatorService extends Service {
 					reader.close();
 				}
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
+				Log.e(TAG, "Error: " + e.getMessage());
 				System.exit(1);
 			}
 		}
@@ -207,43 +205,16 @@ public class NavigatorService extends Service {
 	
 	@Override
 	public void onDestroy() {
-		broadcastNavCommand("SHUTDOWN");
-		
+		broadcastNavCommand("SHUTDOWN");		
 		// Cancel the persistent notification.
-		mNM.cancel(0);
-
 		// Tell the user we stopped.
 		Toast.makeText(this, "Navigator stopped!", Toast.LENGTH_SHORT).show();
-		LocalBroadcastManager.getInstance(this).unregisterReceiver(gcmOperationReceiver);
-		
+		LocalBroadcastManager.getInstance(this).unregisterReceiver(gcmOperationReceiver);		
 		super.onDestroy();
+		this.sendServiceStateBroadcast(false);
+		mNM.cancel(0);
 	}
 
-	private void showNotification() {
-		/* Show a notification while this service is running */
-
-		// In this sample, we'll use the same text for the ticker and the
-		// expanded notification
-		CharSequence text = "Navigator running!";
-
-		// Set the icon, scrolling text and timestamp
-		Notification notification = new Notification(R.drawable.gpslogger16,
-				text, System.currentTimeMillis());
-
-		// The PendingIntent to launch our activity if the user selects this
-		// notification
-		PendingIntent contentIntent = PendingIntent.getActivity(this, 0,
-				new Intent(this, NavigatorService.class), 0);
-
-		// Set the info for the views that show in the notification panel.
-		notification.setLatestEventInfo(this, "NavigatorService", text,
-				contentIntent);
-
-		// Send the notification.
-		// We use a layout id because it is a unique number. We use it later to
-		// cancel.
-		mNM.notify(0, notification);
-	}
 	
 	@Override
 	public IBinder onBind(Intent arg0) {

@@ -49,5 +49,16 @@
     <string name="X_Y_Accuracy">X,Y,Accuracy:</string>
     <string name="default_gps_accuracy">-,-,-</string>
     <string name="Filtering_and_measurements">Filtering and measurements</string>
+    <string name="mode">Mode</string>
+    <string name="nav_on">Nav ON</string>
+    <string name="nav_off">Nav OFF</string>
+    <string name="ioio_on">IOIO ON</string>
+    <string name="ioio_off">IOIO OFF</string>
+    <string name="gps_on">GPS ON</string>
+    <string name="gps_off">GPS OFF</string>
+    <string name="operating">Operating</string>
+    <string name="shutdown">Not operating</string>
+    <string name="active">Active</string>
+    <string name="inactive">Inactive</string>
 
 </resources>

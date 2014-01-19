@@ -41,7 +41,6 @@ import org.sonardrone.proj.positions.SWEREF99Position;
 import org.sonardrone.proj.positions.WGS84Position;
 
 import android.os.Bundle;
-import android.os.Message;
 import android.util.Log;
 
 

@@ -32,11 +32,14 @@ import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.gcm.GoogleCloudMessaging;
 
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.ActivityManager.RunningServiceInfo;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -64,7 +67,6 @@ public class SonardroneActivity extends Activity {
     public static final String SENDER_ID = "539926077370"; //Project ID from API console
     public static final String DRONECENTRAL_URL = "drone_central_url";
     
-    TextView mDisplay;
     GoogleCloudMessaging gcm;
     AtomicInteger msgId = new AtomicInteger();
     SharedPreferences prefs;
@@ -82,7 +84,6 @@ public class SonardroneActivity extends Activity {
 	private File settingsTemplate = new File(this.rootDir, ".settings.txt");
 	static final int DELETE_PROJECT_ID = 1;
 
-	@SuppressWarnings("unused")
 	private BroadcastReceiver locationReceiver = new BroadcastReceiver() {
 	    @Override
 	    public void onReceive(Context context, Intent intent) {
@@ -92,6 +93,33 @@ public class SonardroneActivity extends Activity {
 	        		intent.getFloatExtra("accuracy", 0));
 	    }
 	};
+	
+	private BroadcastReceiver serviceStatusReceiver = new BroadcastReceiver() {
+	    @Override
+	    public void onReceive(Context context, Intent intent) {
+	    	String serviceName = intent.getStringExtra("SERVICE");
+	    	boolean running = intent.getBooleanExtra("STATE", false);
+	    	
+	    	
+	    	CompoundButton toggleButton = null;
+	    	if (serviceName == "GpsLoggerService")
+	    		toggleButton = (CompoundButton) findViewById(R.id.gpsToggleButton);
+	    	if (serviceName == "IOIOControlService")
+	    			toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
+	    	if (serviceName == "NavigatorService")
+    			toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
+	    	
+	    	if (running && !toggleButton.isChecked() ) {	    	
+	    		toggleButton.setChecked(true);
+	    	}
+	    	else {
+	    		if (!running && toggleButton.isChecked()) {
+	    			toggleButton.setChecked(true);
+	    		}
+	    	}
+	    }
+	};
+	
 
 	private boolean checkPlayServices() {
 	    int resultCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
@@ -113,7 +141,6 @@ public class SonardroneActivity extends Activity {
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main);
-		mDisplay = (TextView) findViewById(R.id.displayMsgTextview);
 		context = getApplicationContext();
 		if (checkPlayServices()) {
             gcm = GoogleCloudMessaging.getInstance(this);
@@ -129,6 +156,10 @@ public class SonardroneActivity extends Activity {
 		this.init(); // check that app dir exist, and default settings exist
 		this.updateSpinner(); // List project directories
 		this.loadProject(); // Set project directory to currently selected dir
+		LocalBroadcastManager.getInstance(this.context).registerReceiver(locationReceiver,
+				new IntentFilter("LOCATION_UPDATED"));
+		LocalBroadcastManager.getInstance(this.context).registerReceiver(serviceStatusReceiver,
+				new IntentFilter("SERVICE_STATE"));
 	}
 
 	/**
@@ -223,7 +254,7 @@ public class SonardroneActivity extends Activity {
 	        }
 
 	        protected void onPostExecute(String msg) {
-	            mDisplay.append(msg + "\n");
+	            Log.i(TAG, msg);
 	        }
 
 			
@@ -250,9 +281,12 @@ public class SonardroneActivity extends Activity {
 	        HttpResponse response = httpclient.execute(httppost);
 	        
 	    } catch (ClientProtocolException e) {
-	    	Log.i(TAG, "Error when registring to dronecentral: " + e.getMessage());
+	    	Log.e(TAG, "Error when registring to dronecentral: " + e.getMessage());
 	    } catch (IOException e) {
-	    	Log.i(TAG, "Error when registring to dronecentral: " + e.getMessage());
+	    	Log.e(TAG, "Error when registring to dronecentral: " + e.getMessage());
+	    }
+	    catch (Exception e) {
+	    	Log.e(TAG, "Error when registering to dronecentral");
 	    }
 	}
 	
@@ -287,7 +321,69 @@ public class SonardroneActivity extends Activity {
 	}
 	
 	public void onStart(){
-		super.onStart();		
+		super.onStart();
+	}
+	
+	public void onResume() {
+		super.onResume();
+		this.updateServiceSwitches();
+	}
+	
+	public void updateServiceSwitches() {
+		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.gpsToggleButton);
+		if (!toggleButton.isChecked() && this.gpsLoggerServiceIsRunning())
+			toggleButton.setChecked(true);
+		else {
+			if (toggleButton.isChecked() && !this.gpsLoggerServiceIsRunning()) 
+				toggleButton.setChecked(false);
+		}
+		
+		
+		toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
+		if (!toggleButton.isChecked() && this.ioioControlServiceIsRunning())
+			toggleButton.setChecked(true);
+		else {
+			if (toggleButton.isChecked() && !this.ioioControlServiceIsRunning()) 
+				toggleButton.setChecked(false);
+		}
+		
+		toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
+		if (!toggleButton.isChecked() && this.navigatorServiceIsRunning())
+			toggleButton.setChecked(true);
+		else {
+			if (toggleButton.isChecked() && !this.navigatorServiceIsRunning()) 
+				toggleButton.setChecked(false);
+		}
+	}
+	
+	private boolean gpsLoggerServiceIsRunning() {
+	    ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+	    for (RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+	        if (GpsLoggerService.class.getName().equals(service.service.getClassName())) {
+	            return true;
+	        }
+	    }
+	    return false;
+	}
+	
+	private boolean ioioControlServiceIsRunning() {
+	    ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+	    for (RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+	        if (IOIOControlService.class.getName().equals(service.service.getClassName())) {
+	            return true;
+	        }
+	    }
+	    return false;
+	}
+	
+	private boolean navigatorServiceIsRunning() {
+	    ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+	    for (RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+	        if (NavigatorService.class.getName().equals(service.service.getClassName())) {
+	            return true;
+	        }
+	    }
+	    return false;
 	}
 	
 	private boolean isExternalStoragePresent() {
@@ -402,10 +498,10 @@ public class SonardroneActivity extends Activity {
 					+ "#Threshold for turn-rate to estimate bearing from compass [deg/s]\n"
 					+ "compassTurnrateThreshold: 2\n");
 		} catch (FileNotFoundException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(TAG, "Error: " + e.getMessage());
 			System.exit(1);
 		} catch (IOException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(TAG, "Error: " + e.getMessage());
 			System.exit(1);
 		} finally {
 			try {
@@ -413,7 +509,7 @@ public class SonardroneActivity extends Activity {
 					writer.close();
 				}
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
+				Log.e(TAG, "Error: " + e.getMessage());
 				System.exit(1);
 			}
 		}
@@ -569,10 +665,10 @@ public class SonardroneActivity extends Activity {
 				rownr += 1;
 			}
 		} catch (FileNotFoundException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(TAG, "Error: " + e.getMessage());
 			System.exit(1);
 		} catch (IOException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(TAG, "Error: " + e.getMessage());
 			System.exit(1);
 		} finally {
 			try {
@@ -580,7 +676,7 @@ public class SonardroneActivity extends Activity {
 					reader.close();
 				}
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
+				Log.e(TAG, "Error: " + e.getMessage());
 				System.exit(1);
 			}
 		}
@@ -622,10 +718,10 @@ public class SonardroneActivity extends Activity {
 				}
 			}
 		} catch (FileNotFoundException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(TAG, "Error: " + e.getMessage());
 			System.exit(1);
 		} catch (IOException e) {
-			System.err.println("Error: " + e.getMessage());
+			Log.e(TAG, "Error: " + e.getMessage());
 			System.exit(1);
 		} finally {
 			try {
@@ -633,7 +729,7 @@ public class SonardroneActivity extends Activity {
 					writer.close();
 				}
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
+				Log.e(TAG, "Error: " + e.getMessage());
 				System.exit(1);
 			}
 		}
@@ -737,13 +833,28 @@ public class SonardroneActivity extends Activity {
 		// get integers
 	}
 
+	public void operate(View view) {
+		CompoundButton toggleButton = (CompoundButton) view;
+		if(toggleButton.isChecked())
+			this.broadcastNavCommand("OPERATE");
+		else
+			this.broadcastNavCommand("SHUTDOWN");
+	}
+	
+	public void activate(View view) {
+		CompoundButton toggleButton = (CompoundButton) view;
+		if(toggleButton.isChecked())
+			this.broadcastNavCommand("ACTIVATE");
+		else
+			this.broadcastNavCommand("DEACTIVATE");		
+	}
+	
+	
+	
 	public void runButtonClickHandler(View view) {
-
-		Bundle bundle = new Bundle();
-		bundle.putCharSequence("projectDir", this.projectDir.toString());
-
 		CompoundButton toggleButton = null;
 		Intent intent = null;
+		
 
 		switch (view.getId()) {
 		case R.id.navToggleButton:
@@ -759,14 +870,10 @@ public class SonardroneActivity extends Activity {
 			intent = new Intent(SonardroneActivity.this,
 					IOIOControlService.class);
 			break;
-		case R.id.operateToggleButton:
-			toggleButton = (CompoundButton) findViewById(R.id.operateToggleButton);
-			if(toggleButton.isChecked())
-				this.broadcastNavCommand("OPERATE");
-			break;
 		}
 
-		intent.putExtras(bundle);
+		intent.putExtra("projectDir", this.projectDir.toString());
+		
 		// PendingIntent pendingIntent = PendingIntent.getService(
 		// SonardroneActivity.this, 0, intent, 0);
 

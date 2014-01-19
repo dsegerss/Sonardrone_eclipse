@@ -28,7 +28,7 @@
            android:value="3265130" />
         
         <receiver
-            android:name="org.sonardrone.gcm.GCMBroadcastReceiver"
+            android:name=".gcm.GcmBroadcastReceiver"
             android:permission="com.google.android.c2dm.permission.SEND" >
             <intent-filter>
                 <action android:name="com.google.android.c2dm.intent.RECEIVE" />

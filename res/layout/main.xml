@@ -84,16 +84,7 @@
         <TableRow
             android:id="@+id/tableRow4"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" >
-
-           	<TextView
-           	    android:id="@+id/textView4"
-           	    android:layout_width="wrap_content"
-           	    android:layout_height="wrap_content"
-           	    android:text="@string/title_navigator_service"
-           	    android:textAppearance="?android:attr/textAppearanceMedium" >
-
-			</TextView>    
+            android:layout_height="wrap_content" >    
             
             <ToggleButton
                 android:id="@+id/navToggleButton"
@@ -102,7 +93,9 @@
                 android:checked="false"
                 android:hint="@string/toggle_nav_hint"
                 android:onClick="runButtonClickHandler"
-                android:text="@string/toggle_nav_on" >
+                android:text="@string/toggle_nav_on"
+                android:textOff="@string/nav_off"
+                android:textOn="@string/nav_on" >
 
 			</ToggleButton>
 		
@@ -110,16 +103,7 @@
 		<TableRow
             android:id="@+id/tableRow6"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" >
-
-            <TextView
-                android:id="@+id/textView5"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/gps_service"
-                android:textAppearance="?android:attr/textAppearanceMedium" >
-
-			</TextView>    		    
+            android:layout_height="wrap_content" >    		    
 
             	<ToggleButton
             	    android:id="@+id/gpsToggleButton"
@@ -127,23 +111,16 @@
             	    android:layout_height="wrap_content"
             	    android:checked="false"
             	    android:onClick="runButtonClickHandler"
-            	    android:text="@string/toggle_gps_on" >
+            	    android:text="@string/toggle_gps_on"
+            	    android:textOff="@string/gps_off"
+            	    android:textOn="@string/gps_on" >
 
 			</ToggleButton>            
  		</TableRow>	        	    
 		<TableRow
             android:id="@+id/tableRow7"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" >
-
-            <TextView
-                android:id="@+id/textView6"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/title_ioio_service"
-                android:textAppearance="?android:attr/textAppearanceMedium" >
-
-			</TextView>    
+            android:layout_height="wrap_content" >    
 		    
         	<ToggleButton
         	    android:id="@+id/ioioToggleButton"
@@ -151,55 +128,44 @@
         	    android:layout_height="wrap_content"
         	    android:checked="false"
         	    android:onClick="runButtonClickHandler"
-        	    android:text="@string/toggle_ioio" >
+        	    android:text="@string/toggle_ioio"
+        	    android:textOff="@string/ioio_off"
+        	    android:textOn="@string/ioio_on" >
 
 			</ToggleButton>
         </TableRow>
-        <TableRow
-            android:id="@+id/tableRow8"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" >
-
-            <TextView
-                android:id="@+id/textView7"
+      	    <TextView
+                android:id="@+id/textView16"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/title_chat_service"
+                android:text="@string/mode"
                 android:textAppearance="?android:attr/textAppearanceMedium" >
 
-			</TextView>    		    
-
-            	<ToggleButton
-            	    android:id="@+id/chatToggleButton"
-            	    android:layout_width="wrap_content"
-            	    android:layout_height="wrap_content"
-            	    android:checked="false"
-            	    android:onClick="runButtonClickHandler"
-            	    android:text="@string/toggle_chat_service" >
-
-			</ToggleButton>            
- 		</TableRow>	        	    
-		        <TableRow
+			</TextView>   
+		<TableRow
             android:id="@+id/tableRow9"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content" >
 
-            <TextView
-                android:id="@+id/textView8"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/title_operate"
-                android:textAppearance="?android:attr/textAppearanceMedium" >
-
-			</TextView>    		    
+			<ToggleButton
+			    android:id="@+id/ToggleButton01"
+			    android:layout_width="wrap_content"
+			    android:layout_height="wrap_content"
+			    android:checked="false"
+			    android:onClick="operate"
+			    android:text="@string/toggle_operative"
+			    android:textOff="@string/shutdown"
+			    android:textOn="@string/operating" />
 
             	<ToggleButton
             	    android:id="@+id/operateToggleButton"
             	    android:layout_width="wrap_content"
             	    android:layout_height="wrap_content"
             	    android:checked="false"
-            	    android:onClick="runButtonClickHandler"
-            	    android:text="@string/toggle_operative" >
+            	    android:onClick="activate"
+            	    android:text="@string/toggle_operative"
+            	    android:textOff="@string/inactive"
+            	    android:textOn="@string/active" >
 
 			</ToggleButton>            
  		</TableRow>	        	    
@@ -477,14 +443,6 @@
       	        android:text="@string/default_motor_load" />
 
       	</TableRow>
-
-        <Button
-            android:id="@+id/readGPSbutton"
-            style="?android:attr/buttonStyleSmall"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:onClick="readGPS"
-            android:text="@string/Read_GPS" />
       	
       	<TableRow
       	    android:id="@+id/tableRow23"
@@ -510,21 +468,9 @@
 			</TextView>
       	  	      	    	  
       	</TableRow>
-      		
-		<TableRow
-   			android:id="@+id/tableRow24"
-      		android:layout_width="wrap_content"
-      		android:layout_height="wrap_content" >
-		    <TextView
-      	  	    android:id="@+id/displayMsgTextview"
-      	  	    android:layout_width="wrap_content"
-      	  	    android:layout_height="wrap_content"
-      	  	    android:textAppearance="?android:attr/textAppearanceMedium" >
-			</TextView>
-	    </TableRow>
+
     </TableLayout>
     
 </LinearLayout>
 
 </ScrollView>
-

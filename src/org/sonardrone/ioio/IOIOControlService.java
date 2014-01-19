@@ -10,6 +10,7 @@ import ioio.lib.util.IOIOLooper;
 import ioio.lib.util.android.IOIOService;
 
 import org.sonardrone.R;
+import org.sonardrone.SonardroneActivity;
 
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -17,7 +18,10 @@ import android.app.PendingIntent;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.IBinder;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
+import android.widget.Toast;
 
 /**
  * A service to interact with external electronics connected to android using IOIO
@@ -29,6 +33,7 @@ public class IOIOControlService extends IOIOService {
 	private static volatile int rudderAngle;
 	private static volatile int load;
 	private static volatile boolean active;	
+	private NotificationManager mNM;
 	
 	@Override
 	protected IOIOLooper createIOIOLooper() {
@@ -90,25 +95,43 @@ public class IOIOControlService extends IOIOService {
 	@Override
 	public void onStart(Intent intent, int startId) {
 		super.onStart(intent, startId);
-		NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-		if (intent != null && intent.getAction() != null
-				&& intent.getAction().equals("stop")) {
-			// User clicked the notification. Need to stop the service.
-			nm.cancel(0);
-			stopSelf();
-		} else {
-			// Service starting. Create a notification.
-			Notification notification = new Notification(
-					R.drawable.ic_launcher, "IOIO service running",
-					System.currentTimeMillis());
-			notification
-					.setLatestEventInfo(this, "IOIO Service", "Click to stop",
-							PendingIntent.getService(this, 0, new Intent(
-									"stop", null, this, this.getClass()), 0));
-			notification.flags |= Notification.FLAG_ONGOING_EVENT;
-			nm.notify(0, notification);
-		}
+		mNM = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+		showNotification();
+		sendServiceStateBroadcast(true);
 	}
+	
+	private void showNotification() {
+		// In this sample, we'll use the same text for the ticker and the
+				// expanded notification
+		CharSequence text = "IOIO service active!";
+				
+		// prepare intent which is triggered if the
+		// notification is selected
+
+		Intent intent = new Intent(this, SonardroneActivity.class);
+		PendingIntent pIntent = PendingIntent.getActivity(this, 0, intent, 0);
+				
+		// build notification
+		// the addAction re-use the same intent to keep the example short
+		Notification n  = new NotificationCompat.Builder(this)
+				.setContentTitle(text)
+				.setContentText("IOIO service is running")
+				.setSmallIcon(R.drawable.ic_launcher)
+				.setContentIntent(pIntent)
+				.addAction(R.drawable.gpslogger16, "Go to activity", pIntent).build();
+		
+		mNM.notify(0, n);	
+	}
+	
+	@Override
+	public void onDestroy() {
+		super.onDestroy();
+		// Tell the user we stopped.
+		Toast.makeText(this, "IOIO service stopped!", Toast.LENGTH_SHORT).show();
+		sendServiceStateBroadcast(false);
+		mNM.cancel(0);
+	}
+	
 
 	public void setRudderAngle(int angle) {
 		rudderAngle=angle;
@@ -126,7 +149,7 @@ public class IOIOControlService extends IOIOService {
 	}
 
 	public void stopMotor() {
-		active=true;
+		active=false;
 		Log.d(TAG,"Stopped motor");
 	}
 	
@@ -153,6 +176,13 @@ public class IOIOControlService extends IOIOService {
 		public IOIOControlService getService() {
 			return IOIOControlService.this;
 		}
+	}
+	
+	private void sendServiceStateBroadcast(boolean state){
+		Intent intent = new Intent("SERVICE_STATE");
+	    intent.putExtra("SERVICE", "IOIOControlService");
+	    intent.putExtra("STATE", state);
+	    LocalBroadcastManager.getInstance(IOIOControlService.this).sendBroadcastSync(intent);
 	}
 
 }
