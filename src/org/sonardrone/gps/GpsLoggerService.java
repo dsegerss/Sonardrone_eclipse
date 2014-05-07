@@ -1,17 +1,7 @@
 package org.sonardrone.gps;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.text.DateFormat;
-import java.text.DecimalFormat;
-import java.text.SimpleDateFormat;
-import java.util.GregorianCalendar;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import org.sonardrone.R;
 import org.sonardrone.SonardroneActivity;
@@ -24,6 +14,8 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.hardware.Sensor;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -39,44 +31,70 @@ import android.widget.Toast;
 public class GpsLoggerService extends Service {
 	private LocationManager lm;
 	private MyLocationListener locationListener;
-	private static long minTimeMillis = 1000;
+	
+	private SensorManager mSensorManager;
+	private Sensor accelerometer;
+	private Sensor magnetometer;	
+	public OrientationListener orientationListener;
+	
+	private static long minTimeMillis = 500;
 	private static long minDistanceMeters = 2;
-	private static float minAccuracyMeters = 15;
+	private static float minAccuracyMeters = 5;
 
-	private final DecimalFormat sevenSigDigits = new DecimalFormat("0.#######");
-	private final DateFormat timestampFormat = new SimpleDateFormat(
-			"yyyyMMddHHmmss");
+	//private final DecimalFormat sevenSigDigits = new DecimalFormat("0.#######");
+	//private final DateFormat timestampFormat = new SimpleDateFormat(
+	//		"yyyyMMddHHmmss");
 
 	private static final String tag = "GpsLoggerService";
-	private File projectDir = null;
-	private FileWriter measlog = null;
-
-	// Map with settings
-	private Map<String, String> settings = new HashMap<String, String>();
-	// Map with row order for settings incl. comment rows
-	private Map<String, String> rfRowNr = null;
-
+	private final int ORIENTATION_UPDATE_PERIOD = 500;
+	private final int ORIENTATION_STARTUP_DELAY = 2000;
 	private int lastStatus = 0;
 	private static boolean showingDebugToast = false;
 
 	private NotificationManager mNM;
+	
+	private Timer orientationBroadcaster = new Timer();
+	
+	private class OrientationUpdatedBroadcaster extends TimerTask {
+		public void run() {
+			Intent intent = new Intent("ORIENTATION_UPDATED");
+		    intent.putExtra("heading", GpsLoggerService.this.get_heading());
+		    intent.putExtra("timestamp", GpsLoggerService.this.get_heading_timestamp());
+		    LocalBroadcastManager.getInstance(GpsLoggerService.this).sendBroadcastSync(intent);
+		}
+	}
+	
+	public double get_heading() {
+		return this.orientationListener.get_heading();
+	}
 
+	public long get_heading_timestamp() {
+		return this.orientationListener.get_heading_timestamp();
+	}
+	
 	@Override
 	public void onCreate() {
 		super.onCreate();
 		startGpsLoggerService();
+	    mSensorManager = (SensorManager)getSystemService(SENSOR_SERVICE);
+	    accelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+	    magnetometer = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+	    mSensorManager.registerListener(this.orientationListener, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
+	    mSensorManager.registerListener(this.orientationListener, magnetometer, SensorManager.SENSOR_DELAY_NORMAL);
+	    this.orientationBroadcaster.scheduleAtFixedRate(new OrientationUpdatedBroadcaster(),
+                ORIENTATION_STARTUP_DELAY, ORIENTATION_UPDATE_PERIOD);
 		this.sendServiceStateBroadcast(true);
 		mNM = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 		// Display a notification about us starting. We put an icon in the
 		// status bar.
 		showNotification();
-		
 	}
 
 	@Override
 	public void onDestroy() {
 		super.onDestroy();
 		shutdownGpsLoggerService();
+	    mSensorManager.unregisterListener(this.orientationListener);
 		//update activity gui
 		this.sendServiceStateBroadcast(false);
 		// Cancel the persistent notification.
@@ -104,86 +122,6 @@ public class GpsLoggerService extends Service {
 	@Override
 	public void onStart(Intent intent, int startId) {
 		super.onStart(intent, startId);
-		// File sdcard = Environment.getExternalStorageDirectory();
-		// File rootDir = new File(sdcard, "sonardrone");
-
-		this.projectDir = new File(
-				(String) intent.getCharSequenceExtra("projectDir"));
-		Log.d(tag, String.format("Project dir is: %s",
-				this.projectDir.toString()));
-
-		this.readConfig();
-
-		// init measurement log
-		File measLogPath = new File(this.projectDir, "meas.log");
-		try {
-			this.measlog = new FileWriter(measLogPath);
-		} catch (Exception e) {// Catch exception if any
-			Log.e(tag, "Error: " + e.getMessage());
-		}
-		locationListener.initLog(this.measlog);
-		
-	}
-
-	private void readConfig() {
-		// resource file object
-		File rf = new File(this.projectDir, "settings.txt");
-		// Read resource file into settings hash map
-		this.rfRowNr = new HashMap<String, String>();
-		this.settings = new HashMap<String, String>();
-
-		BufferedReader reader = null;
-		Log.d(tag, "Reading resources");
-		try {
-			reader = new BufferedReader(new FileReader(rf));
-			String row;
-			int rownr = 0;
-			while ((row = reader.readLine()) != null) {
-				if (row.startsWith("#") || row.trim() == "") {
-					this.rfRowNr.put(String.valueOf(rownr), row);
-					rownr += 1;
-					continue;
-				}
-				String[] keyValuePair = row.split(":");
-				// For rfRowNr, rownumber is key and value is settings key-word
-				this.rfRowNr.put(String.valueOf(rownr), keyValuePair[0]);
-				this.settings.put(keyValuePair[0], keyValuePair[1].trim());
-				rownr += 1;
-			}
-		} catch (FileNotFoundException e) {
-			Log.e(tag, "Error: " + e.getMessage());
-			System.exit(1);
-		} catch (IOException e) {
-			Log.e(tag, "Error: " + e.getMessage());
-			System.exit(1);
-		} finally {
-			try {
-				if (reader != null) {
-					reader.close();
-				}
-			} catch (IOException e) {
-				Log.e(tag, "Error: " + e.getMessage());
-				System.exit(1);
-			}
-		}
-
-		/*
-		 * String[] doubleParams = {"k","load","rudder_angle","dt_default",
-		 * "tolerance"
-		 * ,"ax_max","ay_max","max_rudder_angle","max_dir_change","tau",
-		 * "sigmaX_GPS","sigmaV_GPS","sigmaPhi_GPS","sigmaPhi_compass",
-		 * "sigmaBeta_rudder"
-		 * ,"sigmaV_load","min_look_ahead","look_ahead","minVelDist",
-		 * "minBearingDist"
-		 * ,"bearingTurnrateThreshold","compassTurnrateThreshold"
-		 * ,"min_turn_radius"};
-		 * 
-		 * String[] boolParams ={"filterSwitch","compassSwitch",
-		 * "gpsPositionSwitch","gpsVelSwitch",
-		 * "gpsBearingSwitch","encoderVelSwitch","updateKSwitch"};
-		 * 
-		 * //todo: check for all required parameters
-		 */
 	}
 
 	private void sendServiceStateBroadcast(boolean state){
@@ -198,12 +136,6 @@ public class GpsLoggerService extends Service {
 		private double[] pos = { 0, 0 };
 		private long timestamp = 0;
 		private float accuracy = 100;
-
-		private FileWriter gpslog = null;
-
-		private void initLog(FileWriter log) {
-			this.gpslog = log;
-		}
 
 		private double[] project(String projName, double[] point) {
 			/*
@@ -238,70 +170,13 @@ public class GpsLoggerService extends Service {
 						this.timestamp = System.currentTimeMillis();
 						this.accuracy = loc.getAccuracy();
 						sendLocationUpdatedBroadcast();
-
-						GregorianCalendar greg = new GregorianCalendar();
-						// TimeZone tz = greg.getTimeZone();
-						// int offset =tz.getOffset(System.currentTimeMillis());
-						// greg.add(Calendar.SECOND, (offset / 1000) * -1);
-						String msg = timestampFormat.format(greg.getTime())
-								+ "\t"
-								+ proj_pos[0]
-								+ "\t"
-								+ proj_pos[1]
-								+ "\t"
-								+ (loc.hasAccuracy() ? loc.getAccuracy()
-										: "NULL")
-								+ "\t"
-								+ (loc.hasSpeed() ? loc.getSpeed() : "NULL")
-								+ ","
-								+ (loc.hasBearing() ? loc.getBearing() : "NULL")
-								+ "\n";
-
-						this.gpslog.write(msg);
-						this.gpslog.flush();
 					}
 				} catch (Exception e) {
 					Log.e(tag, e.toString());
 				}
-
-				if (pointIsRecorded) {
-					if (showingDebugToast)
-						Toast.makeText(
-								getBaseContext(),
-								"Location stored: \nLat: "
-										+ sevenSigDigits.format(loc
-												.getLatitude())
-										+ " \nLon: "
-										+ sevenSigDigits.format(loc
-												.getLongitude())
-										+ " \nAlt: "
-										+ (loc.hasAltitude() ? loc
-												.getAltitude() + "m" : "?")
-										+ " \nAcc: "
-										+ (loc.hasAccuracy() ? loc
-												.getAccuracy() + "m" : "?"),
-								Toast.LENGTH_SHORT).show();
-				} else {
-					if (showingDebugToast)
-						Toast.makeText(
-								getBaseContext(),
-								"Location not accurate enough: \nLat: "
-										+ sevenSigDigits.format(loc
-												.getLatitude())
-										+ " \nLon: "
-										+ sevenSigDigits.format(loc
-												.getLongitude())
-										+ " \nAlt: "
-										+ (loc.hasAltitude() ? loc
-												.getAltitude() + "m" : "?")
-										+ " \nAcc: "
-										+ (loc.hasAccuracy() ? loc
-												.getAccuracy() + "m" : "?"),
-								Toast.LENGTH_SHORT).show();
-				}
 			}
 		}
-
+		
 		private void sendLocationUpdatedBroadcast(){
 			Intent intent = new Intent("LOCATION_UPDATED");
 		    intent.putExtra("pos", this.pos);

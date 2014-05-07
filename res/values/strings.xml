@@ -60,5 +60,7 @@
     <string name="shutdown">Not operating</string>
     <string name="active">Active</string>
     <string name="inactive">Inactive</string>
+    <string name="waypoint_tolerance">10</string>
+    <string name="filter_dt">0.5</string>
 
 </resources>

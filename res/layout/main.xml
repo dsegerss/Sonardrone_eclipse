@@ -361,7 +361,8 @@
         	    android:layout_width="62dp"
         	    android:layout_height="wrap_content"
         	    android:ems="10"
-        	    android:inputType="numberDecimal" >
+        	    android:inputType="numberDecimal"
+        	    android:text="@string/waypoint_tolerance" >
 
         	    <requestFocus />
         	</EditText>
@@ -385,7 +386,8 @@
         	    android:layout_width="62dp"
         	    android:layout_height="wrap_content"
         	    android:ems="10"
-        	    android:inputType="numberDecimal" >
+        	    android:inputType="numberDecimal"
+        	    android:text="@string/filter_dt" >
 
         	    <requestFocus />
         	</EditText>

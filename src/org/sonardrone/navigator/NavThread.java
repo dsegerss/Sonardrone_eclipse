@@ -5,6 +5,8 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.List;
 
 import org.apache.http.HttpResponse;
@@ -15,6 +17,7 @@ import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.message.BasicNameValuePair;
+import org.sonardrone.Project;
 import org.sonardrone.SonardroneActivity;
 import org.sonardrone.ioio.IOIOControlService;
 
@@ -31,8 +34,8 @@ import android.util.Log;
 
 public class NavThread extends Thread {
 	private Context context = null;
-	public	File projectDir;
-	public Navigator nav = new Navigator();
+	private Project prj = null;
+	public Navigator nav = null;
     public String DRONECENTRAL_URL = "drone_central_url";
     public String TAG = "NavThread";
 
@@ -40,11 +43,13 @@ public class NavThread extends Thread {
 	public static IOIOControlService boundIOIOControlService;
 	public static boolean ioioControlServiceIsBound = false;
 
-    public NavThread(String name,File projectDir, Context context) {
+    public NavThread(String name, Context context) {
 		super(name);
-		this.projectDir=projectDir;
 		this.context = context;
 		NavigatorService.operative = false;
+		this.prj = new Project(Navigator.projectName);
+		this.nav = new Navigator();
+		this.nav.initProject();
 	}
 	
 	private ServiceConnection ioioControlServiceConnection = new ServiceConnection() {
@@ -147,9 +152,24 @@ public class NavThread extends Thread {
 	    				intent.getLongExtra("timestamp", 0));
 	    		NavThread.this.nav.set_GPS_accuracy(
 	    				intent.getFloatExtra("accuracy", 0));
+	    		NavThread.this.nav.updateGPSVel();
+	    		NavThread.this.nav.updateGPSBearing();
 	    	}
 	    }
 	};
+	
+	private BroadcastReceiver orientationReceiver = new BroadcastReceiver() {
+	    @Override
+	    public void onReceive(Context context, Intent intent) {
+	    	if (!NavThread.this.nav.simulateGPSSwitch) {
+	    		NavThread.this.nav.set_phi_compass(
+	    				intent.getDoubleExtra("heading", 0.0));
+	    		NavThread.this.nav.set_phi_compass_time(
+	    				intent.getLongExtra("timestamp", 0));
+	    	}
+	    }
+	};
+
 	
 	// Our handler for received Intents. This will be called whenever an Intent
 	// with an action named "custom-event-name" is broadcasted.
@@ -221,12 +241,14 @@ public class NavThread extends Thread {
 		wpStr = wpStr.replace(" ", "\n");
 		wpStr = wpStr.replace(",", "\t");
 		wpStr = "X\tY\n" + wpStr + "\n";
-		File waypoint = new File(this.projectDir, "waypoints.txt");
+		File waypoint = new File(
+				this.prj.getProjectDir(),
+				"waypoints.txt");
 		BufferedWriter writer = null;				
 		try {
 			writer = new BufferedWriter(new FileWriter(waypoint));
 		} catch (IOException e1) {
-			System.err.println("Error: " + e1.getMessage());
+			Log.e(TAG, "Error: " + e1.getMessage());
 			System.exit(1);
 		}
 		try {
@@ -249,21 +271,21 @@ public class NavThread extends Thread {
     	doBindIOIOControlService();
     	
 		LocalBroadcastManager.getInstance(this.context).registerReceiver(gcmMessageReceiver,
-				new IntentFilter("GCM_COMMAND"));
+				new IntentFilter("COMMAND"));
 		
 		LocalBroadcastManager.getInstance(this.context).registerReceiver(locationReceiver,
 				new IntentFilter("LOCATION_UPDATED"));
-    	
+		
+		LocalBroadcastManager.getInstance(this.context).registerReceiver(orientationReceiver,
+				new IntentFilter("ORIENTATION_UPDATED"));
     	    	
-    	// define paths for project files
-    	File rf = new File(this.projectDir, "settings.rf");
-    	File navLog = new File(this.projectDir, "nav.log");
-    	File stateLog = new File(this.projectDir, "state.log");
-    	File measLog = new File(this.projectDir, "meas.log");
-    	File waypoints = new File(this.projectDir, "waypoints.txt");
-    	
+    	//read parameters from settings.rf
+    	this.nav.readResources();
+
     	// init measurement logs
-    	this.nav.initLogs(rf, navLog, stateLog, measLog);
+    	this.prj.initLogs();
+    	
+    	this.nav.initTime();
     	
     	// init sensors, e.g. wait for GPS-fix
     	this.nav.initSensors();
@@ -271,7 +293,7 @@ public class NavThread extends Thread {
     	// operation loop
     	while (NavigatorService.operative) {
     		//waits (polls) for waypoints if not using autopilot
-   			this.nav.initWaypoints(waypoints);
+   			this.nav.initWaypoints();
    			
    			if (NavigatorService.operative)
    				this.nav.initNavigation();
@@ -283,6 +305,7 @@ public class NavThread extends Thread {
    		this.nav.finish();
    	    LocalBroadcastManager.getInstance(this.context).unregisterReceiver(gcmMessageReceiver);
    		LocalBroadcastManager.getInstance(this.context).unregisterReceiver(locationReceiver);
+   		LocalBroadcastManager.getInstance(this.context).unregisterReceiver(orientationReceiver);
 		doUnbindServices();
 		}
     };

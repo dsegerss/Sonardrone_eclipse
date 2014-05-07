@@ -12,29 +12,18 @@ import static java.lang.Math.sin;
 import static java.lang.Math.sqrt;
 import static java.lang.Math.toRadians;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Random;
 
 import org.ejml.data.DenseMatrix64F;
 import org.ejml.ops.CommonOps;
+import org.sonardrone.Project;
 import org.sonardrone.navigator.kalman.KalmanFilter;
 import org.sonardrone.navigator.kalman.NavFilter;
 import org.sonardrone.proj.positions.SWEREF99Position;
@@ -51,7 +40,9 @@ import android.util.Log;
  * @author David Segersson
  */
 public class Navigator {
-	String TAG = "Navigator";
+	private static final String TAG = "Navigator";
+	public static String projectName = "default";
+	private Project prj;
 
 	/*
 	 * current state, corrected in order: X,Y,V,phi, turn_rate where X,Y is
@@ -71,6 +62,7 @@ public class Navigator {
 	private double k = 3.14; // k=p/v³ , estimated from p = 85%,V = 3m/s
 	private double load = 0; // motor load, in percentage
 	private double rudder_angle = 0;
+	private double compass_bias = 0;
 	private long[] timestamps = { 0, 0, 0, 0, 0, 0, 0 }; // Latest measurement
 														// time-stamps
 	private double gpsAccuracy =25;
@@ -89,8 +81,8 @@ public class Navigator {
 	public boolean simulateGPSSwitch = true;
 	public KalmanFilter kf = new NavFilter();
 
-	private double dt_default = 0.5;
-	private final double dt = 0.5;
+	private double dt_default = 0.1;
+	private final double dt = 0.1;
 	private int measDOF = 7;
 	private int stateDOF = 5;
 	
@@ -141,48 +133,14 @@ public class Navigator {
 	public double compassTurnrateThreshold = 1; // turn-rate threshold to
 												// estimate bearing from GPS-pos
 	public double minVelDist = 10;
-	public double[] lastVelPos = { 0, 0 }; // last position when velocity from
-											// GPS was set
+	public double[] lastVelPos = { 0, 0 }; // last position when velocity from GPS was set
 	public long lastVelTime = 0; // last time when velocity from GPS was set
-
-	// logging and resources
-	public File rf = null;
-	public BufferedWriter navlog = null;
-	public BufferedWriter statelog = null;
-	public BufferedWriter measlog = null;
-	public boolean appendLogs = true;
-
+	
+	public void initProject() {
+		this.prj = new Project(projectName);
+	}
+	
 	public void readResources() {
-		Map<String, String> mp = new HashMap<String, String>();
-		BufferedReader reader = null;
-		System.out.println("Reading resources");
-		try {
-			reader = new BufferedReader(new FileReader(this.rf));
-			String row;
-			while ((row = reader.readLine()) != null) {
-				if (row.startsWith("#") || row.trim() == "") {
-					continue;
-				}
-				String[] keyValuePair = row.split(":");
-				mp.put(keyValuePair[0], keyValuePair[1].trim());
-			}
-		} catch (FileNotFoundException e) {
-			System.err.println("Error: " + e.getMessage());
-			System.exit(1);
-		} catch (IOException e) {
-			System.err.println("Error: " + e.getMessage());
-			System.exit(1);
-		} finally {
-			try {
-				if (reader != null) {
-					reader.close();
-				}
-			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				System.exit(1);
-			}
-		}
-
 		String[] intParams = { "resumeFromWp" };
 
 		String[] doubleParams = { "k", "load", "rudder_angle", "dt_default",
@@ -196,50 +154,54 @@ public class Navigator {
 		String[] boolParams = { "filterSwitch", "compassSwitch",
 				"gpsPositionSwitch", "gpsVelSwitch", "gpsBearingSwitch",
 				"encoderVelSwitch", "encoderTurnrateSwitch", "updateKSwitch",
-				"simulateGPS", "appendLogs", "autoPilot" };
+				"simulateGPSSwitch", "autoPilot" };
 
 		Class<Navigator> navClass = Navigator.class;
 		Field field = null;
 		for (int i = 0; i < doubleParams.length; i++) {
 			try {
-				field = navClass.getField(doubleParams[i]);
+				field = navClass.getDeclaredField(doubleParams[i]);
 			} catch (NoSuchFieldException e1) {
-				System.err.println("Error: no such field:" + doubleParams[i]);
+				Log.e(TAG,"No such field:" + doubleParams[i]);
 				System.exit(1);
 			}
-			if (mp.containsKey(doubleParams[i])) {
+			if (this.prj.containsKey(doubleParams[i])) {
 				try {
-					field.set(this, Double.valueOf(mp.get(doubleParams[i])));
-				} catch (Exception e) {
-					System.err.println("Error: could not parse value of "
-							+ doubleParams[i] + " in resource file");
-					System.exit(1);
+					field.set(this,prj.getParameterAsDouble(doubleParams[i]));
+				} catch (IllegalArgumentException e) {
+					// TODO Auto-generated catch block
+					Log.e(TAG, e.getMessage());
+				} catch (IllegalAccessException e) {
+					// TODO Auto-generated catch block
+					Log.e(TAG, e.getMessage());
 				}
+	
 			} else {
-				System.err.println("Error: parameter " + doubleParams[i]
+				Log.e(TAG,"Parameter " + doubleParams[i]
 						+ " not found in resource file");
 				System.exit(1);
 			}
 		}
 		for (int i = 0; i < boolParams.length; i++) {
 			try {
-				field = navClass.getField(boolParams[i]);
+				field = navClass.getDeclaredField(boolParams[i]);
 			} catch (NoSuchFieldException e1) {
-				System.err.println("Error: " + e1.getMessage());
+				Log.e(TAG,"No such field: " + e1.getMessage());
 				System.exit(1);
 			}
-			if (mp.containsKey(boolParams[i])) {
+			if (this.prj.containsKey(boolParams[i])) {
+				Log.d(TAG,boolParams[i] + "=" + ""
+						+ prj.getParameterAsBoolean(boolParams[i]));
 				try {
-					System.out.println(boolParams[i] + "=" + ""
-							+ mp.get(boolParams[i]));
-					field.set(this, Boolean.parseBoolean(mp.get(boolParams[i])));
-				} catch (Exception e) {
-					System.err.println("Error: could not parse value of "
-							+ boolParams[i] + " in resource file");
-					System.exit(1);
+					field.set(this, prj.getParameterAsBoolean(boolParams[i]));
+				} catch (IllegalArgumentException e) {
+					Log.e(TAG, e.getMessage());
+				} catch (IllegalAccessException e) {
+					Log.e(TAG, e.getMessage());
 				}
-			} else {
-				System.err.println("Error: parameter " + boolParams[i]
+			} 
+			else {
+				Log.e(TAG,"Parameter " + boolParams[i]
 						+ " not found in resource file");
 				System.exit(1);
 			}
@@ -247,23 +209,28 @@ public class Navigator {
 
 		for (int i = 0; i < intParams.length; i++) {
 			try {
-				field = navClass.getField(intParams[i]);
+				field = navClass.getDeclaredField(intParams[i]);
 			} catch (NoSuchFieldException e1) {
-				System.err.println("Error: " + e1.getMessage());
+				Log.e(TAG,"No such field: " + e1.getMessage());
 				System.exit(1);
 			}
-			if (mp.containsKey(intParams[i])) {
+			if (this.prj.containsKey(intParams[i])) {
+				Log.d(TAG,intParams[i] + "=" + ""
+						+ prj.getParameterAsInt(intParams[i]));
 				try {
-					System.out.println(intParams[i] + "=" + ""
-							+ mp.get(intParams[i]));
-					field.set(this, Integer.valueOf(mp.get(intParams[i])));
-				} catch (Exception e) {
-					System.err.println("Error: could not parse value of "
-							+ intParams[i] + " in resource file");
-					System.exit(1);
+					field.set(this, prj.getParameterAsInt(intParams[i]));
+				} catch (IllegalArgumentException e) {
+					// TODO Auto-generated catch block
+					Log.e(TAG, e.getMessage());
+				} catch (IllegalAccessException e) {
+					// TODO Auto-generated catch block
+					Log.e(TAG, e.getMessage());
 				}
-			} else {
-				System.err.println("Error: parameter " + intParams[i]
+				Log.e(TAG,"Error: could not parse value of "
+						+ intParams[i] + " in resource file");
+			}
+			else {
+				Log.e(TAG,"Error: parameter " + intParams[i]
 						+ " not found in resource file");
 				System.exit(1);
 			}
@@ -327,7 +294,8 @@ public class Navigator {
 	}
 
 	public void set_phi_compass(double val) {
-		meas[4] = val;
+		//Bias-corrected compass reading is added as measurement
+		meas[4] = val + this.compass_bias;
 	}
 
 	public void set_turn_rate_rudder(double tr) {
@@ -380,6 +348,32 @@ public class Navigator {
 
 	public double V_load() {
 		return meas[6];
+	}
+	
+	public void log(String logName, String logStr) {
+		prj.log(logName, logStr);
+	}
+	
+	public void logState(double[] predState) {
+		// Write string to measlog
+		// X Y V Heading Turn-rate X_p Y_p V_p Heading_p Turn-rate_p
+		this.log("state", String.format(
+				"%d\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n",
+				this.predictionTime, this.pos()[0], this.pos()[1],
+				this.V(), this.phi(), this.turn_rate(), predState[0],
+				predState[1], predState[2], predState[3], predState[4]));
+	}
+
+	public void logMeas() {
+		double[] logMeas = { -999, -999, -999, -999, -999, -999, -999 };
+		for (int i = 0; i < timestamps.length; i++) {
+			if (timestamps[i] > this.lastTime)
+				logMeas[i] = meas[i];
+		}
+		this.log("meas", String.format(
+				"%d\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", this.predictionTime,
+				logMeas[0], logMeas[1], logMeas[2], logMeas[3], logMeas[4],
+				logMeas[5], logMeas[6]));
 	}
 
 	// get measurement time-stamps
@@ -589,14 +583,9 @@ public class Navigator {
 		goal = this.body2nav(goal);
 		//double theta1 = this.phi(); // limit set for unit circle, 0 deg in
 									// body-frame equals phi in nav-frame
-		//double theta2 = this.phi() - turnDirection * toRadians(90); // sector
-																	// limit, if
-																	// goal is
-																	// on the
-																	// left,
-																	// turnDirection
-																	// is
-																	// negative
+		// sector limit, if goal is on the left, turnDirection
+		// is negative
+		//double theta2 = this.phi() - turnDirection * toRadians(90); 
 		double[] dir = new double[2];
 		dir[0] = 0;
 		dir[1] = 1.0;
@@ -605,36 +594,31 @@ public class Navigator {
 		// double theta1=0;
 		// double theta2=-1*turnDirection*toRadians(90);
 		// logging algorithm geometry for plotting
-		try {
-			this.navlog.write(String.format("time: %d\n", this.lastTime));
-			this.navlog.write("points\tX\tY\n");
-			// this.navlog.write(String.format("cwp\t%f\t%f\n",this.cwp[0],this.cwp[1]));
-			// this.navlog.write(String.format("lwp\t%f\t%f\n",this.lwp[0],this.lwp[1]));
-			this.navlog.write(String.format("pos\t%f\t%f\n", this.pos()[0],
-					this.pos()[1]));
-			// this.navlog.write(String.format("goal\t%f\t%f\n",goal[0],goal[1]));
-			// this.navlog.write(String.format("centre\t%f\t%f\n",centre[0],centre[1]));
-			this.navlog.write("endpoints\n");
-			this.navlog.write("lines\tX1\tY1\tX2\tY2\n");
-			this.navlog.write(String.format("v\t%f\t%f\t%f\t%f\n", this.lwp[0],
-					this.lwp[1], this.cwp[0], this.cwp[1]));
-			// this.navlog.write(String.format("w\t%f\t%f\t%f\t%f\n",this.lwp[0],this.lwp[1],this.pos()[0],this.pos()[1]));
-			// this.navlog.write(String.format("b\t%f\t%f\t%f\t%f\n",this.lwp[0],this.lwp[1],b[0],b[1]));
-			// this.navlog.write(String.format("d\t%f\t%f\t%f\t%f\n",centre[0],centre[1],b[0],b[1]));
-			// this.navlog.write(String.format("x\t%f\t%f\t%f\t%f\n",this.pos()[0],this.pos()[1],b[0],b[1]));
-			// this.navlog.write(String.format("y\t%f\t%f\t%f\t%f\n",b[0],b[1],goal[0],goal[1]));
-			this.navlog.write(String.format("Dir\t%f\t%f\t%f\t%f\n",
-					this.pos()[0], this.pos()[1], dir[0], dir[1]));
-			this.navlog.write(String.format("Ladapt\t%f\t%f\t%f\t%f\n",
-					this.pos()[0], this.pos()[1], goal[0], goal[1]));
-			this.navlog.write("endlines\n");
-			this.navlog.write("circless\tX\tY\tR\ttheta1\ttheta2\n");
-			// this.navlog.write(String.format("curvature\t%f\t%f\t%f\t%f\t%f\n",centre[0],centre[1],radius,theta1,theta2));
-			this.navlog.write("endcircles\n");
-			this.navlog.flush();
-		} catch (IOException e) {
-			System.err.println("Caught IOException: " + e.getMessage());
-		}
+		this.log("nav", String.format("time: %d\n", this.lastTime));
+		this.log("nav", "points\tX\tY\n");
+		// this.navlog.write(String.format("cwp\t%f\t%f\n",this.cwp[0],this.cwp[1]));
+		// this.navlog.write(String.format("lwp\t%f\t%f\n",this.lwp[0],this.lwp[1]));
+		this.log("nav", String.format("pos\t%f\t%f\n", this.pos()[0],
+				this.pos()[1]));
+		// this.navlog.write(String.format("goal\t%f\t%f\n",goal[0],goal[1]));
+		// this.navlog.write(String.format("centre\t%f\t%f\n",centre[0],centre[1]));
+		this.log("nav", "endpoints\n");
+		this.log("nav", "lines\tX1\tY1\tX2\tY2\n");
+		this.log("nav", String.format("v\t%f\t%f\t%f\t%f\n", this.lwp[0],
+				this.lwp[1], this.cwp[0], this.cwp[1]));
+		// this.navlog.write(String.format("w\t%f\t%f\t%f\t%f\n",this.lwp[0],this.lwp[1],this.pos()[0],this.pos()[1]));
+		// this.navlog.write(String.format("b\t%f\t%f\t%f\t%f\n",this.lwp[0],this.lwp[1],b[0],b[1]));
+		// this.navlog.write(String.format("d\t%f\t%f\t%f\t%f\n",centre[0],centre[1],b[0],b[1]));
+		// this.navlog.write(String.format("x\t%f\t%f\t%f\t%f\n",this.pos()[0],this.pos()[1],b[0],b[1]));
+		// this.navlog.write(String.format("y\t%f\t%f\t%f\t%f\n",b[0],b[1],goal[0],goal[1]));
+		this.log("nav", String.format("Dir\t%f\t%f\t%f\t%f\n",
+				this.pos()[0], this.pos()[1], dir[0], dir[1]));
+		this.log("nav", String.format("Ladapt\t%f\t%f\t%f\t%f\n",
+				this.pos()[0], this.pos()[1], goal[0], goal[1]));
+		this.log("nav", "endlines\n");
+		this.log("nav", "circless\tX\tY\tR\ttheta1\ttheta2\n");
+		// this.navlog.write(String.format("curvature\t%f\t%f\t%f\t%f\t%f\n",centre[0],centre[1],radius,theta1,theta2));
+		this.log("nav", "endcircles\n");
 
 		return new_turn_rate;
 	}
@@ -698,30 +682,8 @@ public class Navigator {
 		return wpIter.hasNext() == false;
 	}
 
-	public void setWaypoints(File wpPath) {
-		// read waypoint list from file
-		try {
-			FileInputStream fstream = new FileInputStream(wpPath);
-			DataInputStream in = new DataInputStream(fstream);
-			BufferedReader br = new BufferedReader(new InputStreamReader(in));
-			String strLine;
-
-			this.wp = new ArrayList<double[]>();
-
-			br.readLine();// drop header
-			while ((strLine = br.readLine()) != null) {
-				System.out.println("wp: " + strLine);
-				String valStr[] = strLine.split("\t");
-				double[] p = new double[2];
-				p[0] = Double.valueOf(Double.valueOf(valStr[0]));
-				p[1] = Double.valueOf(Double.valueOf(valStr[1]));
-				this.wp.add(p);
-			br.close();
-			}
-		} catch (IOException ioe) {
-			System.err.println("Could not read waypoint file");
-			System.exit(1);
-		}
+	public void setWaypoints() {
+		this.wp = prj.read_waypoints();	
 	}
 
 	// Kalman filtering
@@ -823,7 +785,6 @@ public class Navigator {
 	}
 
 	public void run() {
-		long lastModRf = this.rf.lastModified();
 		double turn_rate = 0;
 		int iter = 0;
 
@@ -839,7 +800,7 @@ public class Navigator {
 
 			// Check if waypoint is reached
 			if (this.reachedWP()) {
-				System.out.println(String.format("Reached wp: %f,%f",
+				Log.i(TAG, String.format("Reached wp: %f,%f",
 						this.cwp[0], this.cwp[1]));
 				// Move on to next waypoint
 				if (!this.nextWP())
@@ -848,13 +809,15 @@ public class Navigator {
 
 			// Step dt to prediction time
 			this.updateTime();
-			System.out.println(String.format(
+			Log.d(TAG, String.format(
 					"step %d, time %f7.1, x: %f, y %f, V %f, phi %f, beta %f",
 					iter, this.predictionTime / 1000.0, state[0], state[1],
 					state[2], state[3], state[4]));
 
 			// Run Kalman prediction (move down after GPS-reading for real nav)
 			this.kf.predict();
+			
+			this.nsteps += 1; // increment dead-reckoning step counter
 
 			// Save predicted state from Kalman filter
 			double[] predictedState = this.getState();
@@ -863,22 +826,9 @@ public class Navigator {
 			state = this.getState();
 
 			// Update heading measurement from compass
-			if (this.compassSwitch)
-				this.updateCompass();
+			//if (this.compassSwitch)
+			//	this.updateCompass();
 
-			// encoder states are already up-to-date (turn-rate and load)
-			this.set_turn_rate_rudder_time(this.predictionTime);
-			if (this.encoderVelSwitch)
-				this.set_V_load_time(this.predictionTime);
-
-			// GPS is updated if new gps-fix is available
-			// else, the counter for dead-reckoning steps is incremented
-			if (!this.updateGPS())
-				this.nsteps += 1;
-			else
-				this.nsteps = 1;
-
-			// TODO: log only new measurements
 			this.logMeas();
 
 			boolean[] newMeas = { false, false, false, false, false, false,
@@ -897,9 +847,8 @@ public class Navigator {
 			this.logState(predictedState);
 
 			// update resources for remote control params
-			if (this.rf.lastModified() > lastModRf) {
+			if (prj.settings_updated()) {
 				this.readResources();
-				lastModRf = rf.lastModified();
 			}
 
 			// Navigation - calculate wanted turn rate
@@ -913,6 +862,8 @@ public class Navigator {
 			// k should only be updated if ship is cruising at steady speed
 			if (this.V() > 0.5 & this.load > 0 & this.updateKSwitch)
 				this.update_k(3.0, this.load);
+			
+			// update compass bias using GPS heading measurement
 
 			// Uncertainty matrices are updated using the current readings
 			this.configureFilter();
@@ -923,9 +874,10 @@ public class Navigator {
 
 		// write last waypoint index to resume later
 		// If last waypoints has been reached, no resume is wanted
-		if (this.autoPilot && (this.resumeFromWp < this.wp.size() - 1))
-			this.writeIntResource("resumeFromWp", this.resumeFromWp);
-
+		if (this.autoPilot && (this.resumeFromWp < this.wp.size() - 1)) {
+			prj.setInt("resumeFromWp", this.resumeFromWp);
+			prj.write();
+		}
 		// clear waypoint list, to prepare for new instructions
 		this.clearWaypointList();
 		// Switch to manual drive to wait for new instructions
@@ -957,59 +909,6 @@ public class Navigator {
 			
 		return this.resumeFromWp / ((double) this.wp.size()) * 100;
 		
-	}
-
-	private void writeIntResource(String key, Integer val) {
-		List<String> rowList = new ArrayList<String>(); // row list
-		Iterator<String> rowIter = null;
-		BufferedReader reader = null;
-		try {
-			reader = new BufferedReader(new FileReader(this.rf));
-			String row;
-			while ((row = reader.readLine()) != null) {
-				row = row.trim();
-				if (row.startsWith(key))
-					row = key + ": " + String.valueOf(val) + "\n";
-				rowList.add(row);
-			}
-		} catch (FileNotFoundException e) {
-			System.err.println("Error: " + e.getMessage());
-			System.exit(1);
-		} catch (IOException e) {
-			System.err.println("Error: " + e.getMessage());
-			System.exit(1);
-		} finally {
-			try {
-				if (reader != null)
-					reader.close();
-			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				System.exit(1);
-			}
-		}
-
-		BufferedWriter writer = null;
-		try {
-			writer = new BufferedWriter(new FileWriter(this.rf));
-		} catch (IOException e1) {
-			System.err.println("Error: " + e1.getMessage());
-			System.exit(1);
-		}
-		rowIter = rowList.iterator();
-		while (rowIter.hasNext()) {
-			try {
-				writer.write(rowIter.next());
-			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				System.exit(1);
-			}
-		}
-		try {
-			writer.close();
-		} catch (IOException e) {
-			System.err.println("Error: " + e.getMessage());
-			System.exit(1);
-		}
 	}
 
 	public double[] getState() {
@@ -1049,19 +948,22 @@ public class Navigator {
 		}
 	}
 
-	public boolean updateGPSBearing(double[] newGPSPos, long newPosTime) {
+	private void updateCompassBias() {
+		this.compass_bias = this.phi_GPS() - (this.phi_compass() - this.compass_bias);
+	}
+
+	public boolean updateGPSBearing() {
+		
 		if (this.turn_rate() > toRadians(this.bearingTurnrateThreshold)) {
 			this.lastBearingPos = null;
 			return false;
 		} else if (this.lastBearingPos == null) {
-			this.lastBearingPos = this.pos(); // an option is to set
-												// lastBearingPos to the
-												// GPS-measurement
+			this.lastBearingPos = this.pos(); 
 			return false;
 		} else {
-			double dist = mag(minus(this.lastBearingPos, newGPSPos));
+			double dist = mag(minus(this.lastBearingPos, this.pos_GPS()));
 			if (dist >= this.minBearingDist) {
-				double[] dirVec = minus(this.lastBearingPos, newGPSPos);
+				double[] dirVec = minus(this.lastBearingPos, this.pos_GPS());
 				double heading = PI / 2.0 - atan2(dirVec[1], dirVec[0]);
 
 				// A sign change in phi, when not close to zero headinf
@@ -1076,59 +978,48 @@ public class Navigator {
 					heading += 2 * PI;
 
 				this.set_phi_GPS(heading);
-				this.set_phi_GPS_time(newPosTime);
-				this.lastBearingPos = this.pos(); // an option is to use the GPS
-													// measurement
+				this.set_phi_GPS_time(this.pos_GPS_time());
+				this.lastBearingPos = this.pos(); 
 				return true;
 			} else
 				return false;
 		}
 	}
 
-	public boolean updateGPSVel(double[] newGPSPos, long newPosTime) {
-		double dist = mag(minus(this.lastVelPos, newGPSPos));
+	public boolean updateGPSVel() {
+		double dist = mag(minus(this.lastVelPos, this.pos_GPS()));
 		if (dist < this.minVelDist)
 			return false;
-		double pastTime = (newPosTime - this.V_GPS_time()) / 1000.0;
+		double pastTime = (this.pos_GPS_time() - this.V_GPS_time()) / 1000.0;
 		double vel = dist / pastTime;
 		this.set_V_GPS(vel);
-		this.set_V_GPS_time(newPosTime);
+		this.set_V_GPS_time(this.pos_GPS_time());
 		this.lastVelPos = this.pos();
 		return true;
 	}
 
+	
 	// simulation and measurements
-	public boolean updateGPS() {
-		long t = 0;
-		double[] pos = { 0, 0 };
-
+	public boolean updateGPS(double[] new_pos, long t) {
 		if (this.simulateGPSSwitch) {
-			// simulation of irregular measurements
-			double coinFlip = generator.nextGaussian();
-			if (coinFlip < -0.5)
-				return false;
-			// TODO: time should be measured here
-			// long t = System.currentTimeMillis();
-			t = this.predictionTime;
-			/*
-			 * //If no simulation, check last timestamp for position
-			 * if(this.timestamp[0]<currentTime-this.dt) return false;
-			 */
 			// Assumes prediction has been made of new position
 			double r1 = generator.nextGaussian();
 			double r2 = generator.nextGaussian();
-			pos = this.pos();
-			pos[0] += r1 * this.sigmaX_GPS;
-			pos[1] += r2 * this.sigmaX_GPS;
-			if (this.gpsVelSwitch)
-				this.updateGPSVel(pos, t);
-			if (this.gpsBearingSwitch)
-				this.updateGPSBearing(pos, t);
-			if (this.gpsPositionSwitch) {
-				this.set_pos_GPS(pos);
-				this.set_pos_GPS_time(t);
-			}
+			new_pos = this.pos();
+			new_pos[0] += r1 * this.sigmaX_GPS;
+			new_pos[1] += r2 * this.sigmaX_GPS;
 		}
+		
+		if (this.gpsPositionSwitch) {
+			this.set_pos_GPS(new_pos);
+			this.set_pos_GPS_time(t);
+			if (this.gpsVelSwitch)
+				this.updateGPSVel();
+			if (this.gpsBearingSwitch)
+				this.updateGPSBearing();
+		}
+		this.nsteps = 1; // reset counter for dead-reckoning steps
+		
 		return true; // indicates that GPS has been updated
 	}
 
@@ -1269,76 +1160,8 @@ public class Navigator {
 		}
 	}
 
-	public void log(String logName, String logStr) {
-		try {
-			if (logName == "nav")
-				this.navlog.write(logStr);
-			else if (logName == "state")
-				this.statelog.write(logStr);
-			else if (logName == "meas")
-				this.measlog.write(logStr);
-			else
-				System.err.println("Undefined logger: " + logName);
-		} catch (IOException e) {
-			System.err.println("Caught IOException: " + e.getMessage());
-		}
-	}
-
-	public void logState(double[] predState) {
-		// Write string to measlog
-		try {
-			// X Y V Heading Turn-rate X_p Y_p V_p Heading_p Turn-rate_p
-			this.statelog.write(String.format(
-					"%d\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n",
-					this.predictionTime, this.pos()[0], this.pos()[1],
-					this.V(), this.phi(), this.turn_rate(), predState[0],
-					predState[1], predState[2], predState[3], predState[4]));
-			this.statelog.flush();
-
-		} catch (IOException e) {
-			System.err.println("Caught IOException: " + e.getMessage());
-		}
-	}
-
-	public void logMeas() {
-		double[] logMeas = { -999, -999, -999, -999, -999, -999, -999 };
-		for (int i = 0; i < timestamps.length; i++) {
-			if (timestamps[i] > this.lastTime)
-				logMeas[i] = meas[i];
-		}
-		try {
-			this.measlog.write(String.format(
-					"%d\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n", this.predictionTime,
-					logMeas[0], logMeas[1], logMeas[2], logMeas[3], logMeas[4],
-					logMeas[5], logMeas[6]));
-			this.measlog.flush();
-		} catch (IOException e) {
-			System.err.println("Caught IOException: " + e.getMessage());
-		}
-	}
-
-	// initialize sensors and logging etc.
-	public void initLogs(File rfPath, File navLogPath, File stateLogPath,
-			File measLogPath) {
-		this.rf = rfPath;
-
-		// update resources for remote control params
-		this.readResources();
-		boolean append = this.appendLogs;
-
-		try {
-			// Create file
-			FileWriter navlogfstream = new FileWriter(navLogPath, append);
-			FileWriter statelogfstream = new FileWriter(stateLogPath, append);
-			FileWriter measlogfstream = new FileWriter(measLogPath, append);
-
-			this.navlog = new BufferedWriter(navlogfstream);
-			this.statelog = new BufferedWriter(statelogfstream);
-			this.measlog = new BufferedWriter(measlogfstream);
-		} catch (Exception e) {// Catch exception if any
-			System.err.println("Error: " + e.getMessage());
-		}
-
+	
+	public void initTime() {
 		// write starting time to logs
 		Calendar calendar = new GregorianCalendar(); // Get starting time
 		// nav time is time from start
@@ -1361,6 +1184,10 @@ public class Navigator {
 
 	}
 
+
+	// initialize sensors and logging etc.
+	
+
 	void initSensors() {
 		// wait for GPS-fix and set position
 		this.initGPS();
@@ -1372,13 +1199,13 @@ public class Navigator {
 		this.set_V(3.0);
 	}
 
-	void initWaypoints(File wpPath) {
+	void initWaypoints() {
 		//if autopilate is on, wp are read from file
 		//if autopilot is off, 
 		
 		// read way-points from file
 		if (this.autoPilot) {
-			this.setWaypoints(wpPath);
+			this.setWaypoints();
 		} else {
 			while (this.wp.size() == 0 && NavigatorService.operative) {
 				// Waiting for waypoints
@@ -1446,16 +1273,9 @@ public class Navigator {
 
 	public void finish() {
 		NavThread.boundIOIOControlService.stopMotor();
-		try {			
-			this.statelog.close();
-			this.measlog.close();
-			this.navlog.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-
+		prj.close();
 		// Finished
-		System.out.println("Finished waypoint navigation!");
+		Log.i(TAG, "Finished waypoint navigation!");
 	}
 
 	public void clearWaypointList() {
