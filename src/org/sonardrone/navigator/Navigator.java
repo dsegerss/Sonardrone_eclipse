@@ -23,6 +23,7 @@ import java.util.Random;
 
 import org.ejml.data.DenseMatrix64F;
 import org.ejml.ops.CommonOps;
+import org.ejml.simple.SimpleMatrix;
 import org.sonardrone.Project;
 import org.sonardrone.navigator.kalman.KalmanFilter;
 import org.sonardrone.navigator.kalman.NavFilter;
@@ -50,8 +51,8 @@ public class Navigator {
 	 * clockwise direction turn_rate is in deg/s, positive in clockwise
 	 * direction
 	 */
-	public static double[] state = { 0, 0, 0, 0, 0 };
-
+	private static double[] state = { 0, 0, 0, 0, 0 };
+	
 	/*
 	 * current measurements in order X, Y, V, phi_GPS,phi_compass,load where X
 	 * and Y is position in nav fram measure with GPS phi_GPS is heading
@@ -60,8 +61,6 @@ public class Navigator {
 	 */
 	private static double[] meas = { 0, 0, 0, 0, 0, 0, 0 };
 	private double k = 3.14; // k=p/v³ , estimated from p = 85%,V = 3m/s
-	private double load = 0; // motor load, in percentage
-	private double rudder_angle = 0;
 	private double compass_bias = 0;
 	private long[] timestamps = { 0, 0, 0, 0, 0, 0, 0 }; // Latest measurement
 														// time-stamps
@@ -78,10 +77,8 @@ public class Navigator {
 	public boolean encoderVelSwitch = true;
 	public boolean encoderTurnrateSwitch = true;
 	public boolean updateKSwitch = true;
-	public boolean simulateGPSSwitch = true;
 	public KalmanFilter kf = new NavFilter();
 
-	private double dt_default = 0.1;
 	private final double dt = 0.1;
 	private int measDOF = 7;
 	private int stateDOF = 5;
@@ -92,8 +89,6 @@ public class Navigator {
 	private long timeBefore = 0; // Start-time given in milliseconds
 
 	// waypoints and operation
-	private boolean active = false;
-	private boolean autoPilot = false;
 	private List<double[]> wp = new ArrayList<double[]>(); // waypoint list
 	private Iterator<double[]> wpIter = null;
 	private double[] cwp = null; // next waypoint on the path
@@ -135,6 +130,30 @@ public class Navigator {
 	public double minVelDist = 10;
 	public double[] lastVelPos = { 0, 0 }; // last position when velocity from GPS was set
 	public long lastVelTime = 0; // last time when velocity from GPS was set
+
+	//*******Simulator parameterisation****************
+	// Simulated true state
+	private SimpleMatrix sim_state;
+	private SimpleMatrix sim_model;
+	// Simulator switch
+	public boolean simulator = true;
+	// simulated turnrate bias ( degrees/second clockwise)
+	private final double TURNRATE_BIAS = 10;
+	// Drift (m/s) caused by wind and currents
+	private final double[] DRIFT = {0.1, 0,1};
+	// *************************************************
+	
+	// Autonomous operation switch
+	private static boolean autoPilot = false;
+	
+	// Current rudder angle on ioio
+	private static volatile int rudderAngle;
+	
+	// Current load on ioio
+	private static volatile int load;
+	
+	// On/Off switch for engines and rudder
+	private static volatile boolean active;
 	
 	public void initProject() {
 		this.prj = new Project(projectName);
@@ -154,7 +173,7 @@ public class Navigator {
 		String[] boolParams = { "filterSwitch", "compassSwitch",
 				"gpsPositionSwitch", "gpsVelSwitch", "gpsBearingSwitch",
 				"encoderVelSwitch", "encoderTurnrateSwitch", "updateKSwitch",
-				"simulateGPSSwitch", "autoPilot" };
+				"simulator", "autoPilot" };
 
 		Class<Navigator> navClass = Navigator.class;
 		Field field = null;
@@ -169,10 +188,8 @@ public class Navigator {
 				try {
 					field.set(this,prj.getParameterAsDouble(doubleParams[i]));
 				} catch (IllegalArgumentException e) {
-					// TODO Auto-generated catch block
 					Log.e(TAG, e.getMessage());
 				} catch (IllegalAccessException e) {
-					// TODO Auto-generated catch block
 					Log.e(TAG, e.getMessage());
 				}
 	
@@ -220,10 +237,8 @@ public class Navigator {
 				try {
 					field.set(this, prj.getParameterAsInt(intParams[i]));
 				} catch (IllegalArgumentException e) {
-					// TODO Auto-generated catch block
 					Log.e(TAG, e.getMessage());
 				} catch (IllegalAccessException e) {
-					// TODO Auto-generated catch block
 					Log.e(TAG, e.getMessage());
 				}
 				Log.e(TAG,"Error: could not parse value of "
@@ -427,6 +442,47 @@ public class Navigator {
 		this.timestamps[6] = t;
 	}
 
+	// simulator methods
+	public void init_sim_state() {
+		
+		DenseMatrix64F priorX = new DenseMatrix64F(this.stateDOF, 1, true,
+				this.pos()[0], this.pos()[1], this.V(), this.phi(),
+				this.turn_rate());
+		
+		this.sim_state = new SimpleMatrix(priorX);
+		
+		DenseMatrix64F F = new DenseMatrix64F(this.stateDOF, this.stateDOF);
+		// set diagonal to 1
+		for (int i = 0; i < 5; i++)
+			F.set(i, i, 1);
+		F.set(0, 2, sin(this.phi()) * this.dt); // X
+		F.set(1, 2, cos(phi()) * this.dt); // Y
+		F.set(3, 4, this.dt); // phi
+		
+		this.sim_model = new SimpleMatrix(F);
+	}
+	
+	public void update_sim_state() {
+		double v =  this.V() + generator.nextGaussian() * sigmaV_GPS * 0.2;
+		double turnrate = this.turn_rate() + TURNRATE_BIAS;
+		
+		// set randomly adjusted velocity
+		sim_state.set(2, v);
+		// set turnrate adjusted with simulated bias
+		sim_state.set(4, turnrate);
+		
+		// simulate drift
+        sim_state = sim_model.mult(sim_state);
+        sim_state.set(0, sim_state.get(0) + DRIFT[0] * dt);
+        sim_state.set(1, sim_state.get(1) + DRIFT[1] * dt); 
+        
+        // update sim_model (F matrix)
+		this.sim_model.set(0, 2, sin(sim_state.get(3)) * this.dt); // X
+		this.sim_state.set(1, 2, cos(sim_state.get(3)) * this.dt); // Y
+		this.sim_state.set(3, 4, this.dt); // phi		
+        
+	}
+	
 	// navigation methods
 	public boolean nextWP() {
 
@@ -481,15 +537,7 @@ public class Navigator {
 			}
 		}
 	}
-	
-	public boolean getAutopilot() {
-		return this.autoPilot;
-	}
-
-	public double getRudderAngle() {
-		return this.rudder_angle;
-	}
-	
+		
 	public double getTurnrate() {
 		/*
 		 * pure pursuit algorithm following "Path Tracking for unmanned vehicle
@@ -794,9 +842,9 @@ public class Navigator {
 		// prediction is made just before updating the filter
 		// This way a time-step matching the measurements can be choosen
 		
-		NavThread.boundIOIOControlService.startMotor();
+		Navigator.startMotor();
 		
-		while (this.active) {
+		while (Navigator.getActive()) {
 
 			// Check if waypoint is reached
 			if (this.reachedWP()) {
@@ -824,10 +872,10 @@ public class Navigator {
 
 			// predict state
 			state = this.getState();
-
-			// Update heading measurement from compass
-			//if (this.compassSwitch)
-			//	this.updateCompass();
+			
+			// update simulated state
+			if (this.simulator)
+				this.update_sim_state();
 
 			this.logMeas();
 
@@ -837,7 +885,8 @@ public class Navigator {
 				if (timestamps[i] > this.lastTime)
 					newMeas[i] = true;
 			}
-
+			
+			// update filter only using new measurements
 			if (this.filterSwitch)
 				this.kf.partialUpdate(newMeas, this.createZ(), this.R);
 
@@ -857,31 +906,29 @@ public class Navigator {
 			// update velocity and heading measurements from load and rudder
 			// This is done here since filter has just been updated and
 			// variables are up-to-date
-			this.updateEncoders(this.load, turn_rate);
+			this.updateEncoders(Navigator.getMotorLoad(), turn_rate);
 
 			// k should only be updated if ship is cruising at steady speed
-			if (this.V() > 0.5 & this.load > 0 & this.updateKSwitch)
-				this.update_k(3.0, this.load);
-			
-			// update compass bias using GPS heading measurement
+			if (this.V() > 0.5 & Navigator.getMotorLoad() > 0 & this.updateKSwitch)
+				this.update_k(3.0, Navigator.getMotorLoad());
 
 			// Uncertainty matrices are updated using the current readings
 			this.configureFilter();
 			iter++;
 		}
 		
-		NavThread.boundIOIOControlService.stopMotor();
+		Navigator.stopMotor();
 
 		// write last waypoint index to resume later
 		// If last waypoints has been reached, no resume is wanted
-		if (this.autoPilot && (this.resumeFromWp < this.wp.size() - 1)) {
+		if (Navigator.getAutopilot() && (this.resumeFromWp < this.wp.size() - 1)) {
 			prj.setInt("resumeFromWp", this.resumeFromWp);
 			prj.write();
 		}
 		// clear waypoint list, to prepare for new instructions
 		this.clearWaypointList();
 		// Switch to manual drive to wait for new instructions
-		this.setAutopilot(false);
+		Navigator.setAutopilot(false);
 	}
 
 	public double progressEstimate() {
@@ -949,7 +996,7 @@ public class Navigator {
 	}
 
 	private void updateCompassBias() {
-		this.compass_bias = this.phi_GPS() - (this.phi_compass() - this.compass_bias);
+		this.compass_bias = this.phi_GPS() - this.phi_compass();
 	}
 
 	public boolean updateGPSBearing() {
@@ -979,7 +1026,8 @@ public class Navigator {
 
 				this.set_phi_GPS(heading);
 				this.set_phi_GPS_time(this.pos_GPS_time());
-				this.lastBearingPos = this.pos(); 
+				this.lastBearingPos = this.pos();
+				this.updateCompassBias();
 				return true;
 			} else
 				return false;
@@ -1000,8 +1048,10 @@ public class Navigator {
 
 	
 	// simulation and measurements
-	public boolean updateGPS(double[] new_pos, long t) {
-		if (this.simulateGPSSwitch) {
+	public void updateGPS(double[] new_pos, long t, float accuracy) {
+		this.set_GPS_accuracy(accuracy);
+		
+		if (this.simulator) {
 			// Assumes prediction has been made of new position
 			double r1 = generator.nextGaussian();
 			double r2 = generator.nextGaussian();
@@ -1018,63 +1068,54 @@ public class Navigator {
 			if (this.gpsBearingSwitch)
 				this.updateGPSBearing();
 		}
-		this.nsteps = 1; // reset counter for dead-reckoning steps
-		
-		return true; // indicates that GPS has been updated
+		this.nsteps = 1; // reset counter for dead-reckoning steps		
 	}
 
-	public void updateCompass() {
-		// assumes state has been predicted
-		// TODO: Time should be measured here instead of
-		// being taken from predictedTime
-		// long t = System.currentTimeMillis();
-		if (this.turn_rate() < toRadians(this.compassTurnrateThreshold)) {
-			long t = this.predictionTime;
+	public void updateCompass(double heading, long t) {
+		// simulator assumes state has been predicted
+		if (this.simulator) {
 			double r = generator.nextGaussian() - 0.5;
-			double heading = this.phi() + r * toRadians(this.sigmaPhi_compass);
-
-			// A sign change in phi, when not close to zero headinf
-			// causes a crash in the Kalman filter
-			// To avoid this, the closest representation to the current state is
-			// chosen
-			if (Math.abs(state[3] - heading - 2 * PI) < Math.abs(state[3]
-					- heading))
-				heading -= 2 * PI;
-			else if (Math.abs(state[3] - heading + 2 * PI) < Math.abs(state[3]
-					- heading))
-				heading += 2 * PI;
-
-			this.set_phi_compass(heading);
-			this.set_phi_compass_time(t);
+			heading = sim_state.get(3) + r * toRadians(this.sigmaPhi_compass);
 		}
+		// A sign change in phi, when not close to zero heading
+		// causes a crash in the Kalman filter
+		// To avoid this, the closest representation to the current state is
+		// chosen
+		if (Math.abs(state[3] - heading - 2 * PI) < Math.abs(state[3]
+				- heading))
+			heading -= 2 * PI;
+		else if (Math.abs(state[3] - heading + 2 * PI) < Math.abs(state[3]
+				- heading))
+			heading += 2 * PI;
+
+		this.set_phi_compass(heading);
+		this.set_phi_compass_time(t);
 	}
 
 	public void updateEncoders(double load, double turn_rate) {
 		long t;
-		if (this.simulateGPSSwitch)
+		if (this.simulator)
 			t = this.predictionTime;
 		else
 			t = System.currentTimeMillis();
 
 
 		if (this.encoderVelSwitch) {
-			this.load = 85;
-			this.set_V_load(pow(this.load / this.k, 1 / 3.0));
+			Navigator.setMotorLoad(85);
+			this.set_V_load(pow(Navigator.getMotorLoad() / this.k, 1 / 3.0));
 			this.set_V_load_time(t);
-			//TODO: set load
-			NavThread.boundIOIOControlService.setMotorLoad((int) load);
+			Navigator.setMotorLoad((int) load);
 		}
 
 		if (this.encoderTurnrateSwitch) {
 			if (this.V() == 0)
-				this.rudder_angle = 0;
+				Navigator.setRudderAngle(0);
 			else
-				this.rudder_angle = turn_rate2angle(turn_rate, this.V());
+				Navigator.setRudderAngle((int) turn_rate2angle(turn_rate, this.V()));
 			
 			this.set_turn_rate_rudder(turn_rate);
 			this.set_turn_rate_rudder_time(t);
-			NavThread.boundIOIOControlService.setRudderAngle(
-					(int) this.getRudderAngle());
+
 		}
 	}
 
@@ -1095,26 +1136,29 @@ public class Navigator {
 	}
 
 	public void initGPS() {
-		if (this.simulateGPSSwitch) {
+		if (this.simulator) {
 			this.set_pos(this.cwp);
 		}
-		else {
-			while(this.get_GPS_timestamp() == 0) {
-				Log.i(TAG, "Waiting for GPS-fix");
-				try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {					
-					Log.e(TAG, "Error while waiting for GPS fix");
-				}
+		while(this.get_GPS_timestamp() == 0) {
+			Log.i(TAG, "Waiting for GPS-fix");
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {					
+				Log.e(TAG, "Error while waiting for GPS fix");
 			}
-				
-		}
-		
+		}					
 		this.lastVelPos = this.pos();
 	}
 
 	public void initCompass() {
-		// TODO: exchange against real compass readings
+		while(this.get_compass_timestamp() == 0) {
+			Log.i(TAG, "Waiting for compass reading");
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {					
+				Log.e(TAG, "Error while waiting for GPS fix");
+			}
+		}
 		this.set_phi(0.0);
 	}
 
@@ -1201,10 +1245,10 @@ public class Navigator {
 
 	void initWaypoints() {
 		//if autopilate is on, wp are read from file
-		//if autopilot is off, 
+		//else wait for manual wp while in operation 
 		
 		// read way-points from file
-		if (this.autoPilot) {
+		if (Navigator.getAutopilot()) {
 			this.setWaypoints();
 		} else {
 			while (this.wp.size() == 0 && NavigatorService.operative) {
@@ -1213,11 +1257,8 @@ public class Navigator {
 					Thread.sleep(1000);
 				} catch (InterruptedException e) {
 				}
-
 			}
-
 		}
-
 	}
 
 	/*
@@ -1227,7 +1268,7 @@ public class Navigator {
 	void initNavigation() {
 		// If auto-pilot, resume navigation from last visited waypoint
 		// Checks if resume is < than length of waypoint list
-		if (this.resumeFromWp > 0 && this.autoPilot
+		if (this.resumeFromWp > 0 && Navigator.getAutopilot()
 				&& this.resumeFromWp < this.wp.size() - 1) {
 			this.wp.add(this.resumeFromWp, this.pos());
 			this.wpIter = this.wp.iterator();
@@ -1246,7 +1287,7 @@ public class Navigator {
 		double turn_rate = this.getTurnrate();
 
 		// update velocity and heading measurements from load and rudder
-		this.updateEncoders(this.load, turn_rate);
+		this.updateEncoders((double) Navigator.getMotorLoad(), turn_rate);
 
 		// initialize state-vector
 		DenseMatrix64F priorX = new DenseMatrix64F(this.stateDOF, 1, true,
@@ -1272,7 +1313,7 @@ public class Navigator {
 	}
 
 	public void finish() {
-		NavThread.boundIOIOControlService.stopMotor();
+		Navigator.stopMotor();
 		prj.close();
 		// Finished
 		Log.i(TAG, "Finished waypoint navigation!");
@@ -1282,31 +1323,15 @@ public class Navigator {
 		this.wp = new ArrayList<double[]>();
 	}
 	
-	//Control functions
-	public void setRudderAngle(double angle) {
-		this.rudder_angle=angle;		
-	}
-	
-	public void setMotorLoad(double load) {
-		this.load=load;
-	}
-	
-	public void setActive(boolean status) {
-		this.active = status;
-	}
-	
-	public boolean getActive() {
-		return this.active;
-	}
-	
+		
 	public long get_GPS_timestamp() {
 		return this.timestamps[0];
 	}
 	
-	public void setAutopilot(boolean status) {
-		this.autoPilot = status;
+	public long get_compass_timestamp() {
+		return this.timestamps[4];
 	}
-	
+		
 	public Bundle getStatus() {
 		Bundle data = new Bundle();
 		double[] posWgs84 = this.getPosWGS84();
@@ -1321,8 +1346,8 @@ public class Navigator {
 	}
 	
 	public void addWaypointWGS84(double lon, double lat) {
-		if (this.autoPilot)
-			this.setAutopilot(false);
+		if (Navigator.getAutopilot())
+			Navigator.setAutopilot(false);
 		WGS84Position wgsPos = new WGS84Position();
 		wgsPos.setPos(lon, lat);
 		SWEREF99Position rtPos = new SWEREF99Position(wgsPos,
@@ -1350,6 +1375,50 @@ public class Navigator {
 	public double getGpsAccuracy() {
 		return this.gpsAccuracy;
 	}
-
 	
+	public static void setRudderAngle(int angle) {
+		rudderAngle=angle;
+		Log.d(TAG,String.format("Setting rudder to %d", angle));
+		
+	}
+	
+	public static void setAutopilot(boolean status) {
+		Navigator.autoPilot = status;
+	}
+	
+	public static boolean getAutopilot() {
+		return Navigator.autoPilot;
+	}
+
+	public static int getRudderAngle() {
+		return rudderAngle;
+	}
+
+	public static void startMotor() {
+		active = true;
+		Log.d(TAG,"Started motor");
+	}
+
+	public static void stopMotor() {
+		active=false;
+		Log.d(TAG,"Stopped motor");
+	}
+	
+	// set motor load
+	public static void setMotorLoad(int loadPercentage) {
+		load=loadPercentage;
+	}
+	
+	public static int getMotorLoad() {
+		return load;
+	}
+	
+	public static boolean getActive() {
+		return active;
+	}
+
+	public static void setActive(boolean is_active) {
+		active = is_active;
+	}
+
 }

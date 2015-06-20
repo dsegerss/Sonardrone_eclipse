@@ -3,8 +3,10 @@
     package="org.sonardrone"
     android:versionCode="1"
     android:versionName="1.0" >
-    <uses-sdk android:minSdkVersion="8"
-        	android:targetSdkVersion="8"/>
+    <uses-feature android:name="android.hardware.usb.host" />
+    <uses-sdk
+        android:minSdkVersion="8"
+        android:targetSdkVersion="21" />
      
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -25,10 +27,10 @@
         android:allowBackup="true">
         
         <meta-data android:name="com.google.android.gms.version"
-           android:value="3265130" />
+           android:value="5089000" />
         
         <receiver
-            android:name=".gcm.GcmBroadcastReceiver"
+            android:name="org.sonardrone.gcm.GcmBroadcastReceiver"
             android:permission="com.google.android.c2dm.permission.SEND" >
             <intent-filter>
                 <action android:name="com.google.android.c2dm.intent.RECEIVE" />
@@ -36,40 +38,36 @@
                 <category android:name="org.sonardrone.gcm" />
             </intent-filter>
         </receiver>        
-        <service android:name=".gcm.GcmIntentService" />
+        <service android:name="org.sonardrone.gcm.GcmIntentService" />
         
       	<uses-library android:name="com.android.future.usb.accessory"
 			android:required="false" />
         
         <activity
-            android:name=".SonardroneActivity"
+            android:name="org.sonardrone.SonardroneActivity"
             android:label="@string/activity_name" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".gps.GpsLoggerService"
+
+        <service android:name="org.sonardrone.navigator.NavigatorService"
             android:permission="android.permission.ACCESS_FINE_LOCATION"
 			android:label="@string/logger_service_name" android:exported="false"
 			android:enabled="true">
-        </service>
-
-        <service android:name=".navigator.NavigatorService"
-			android:label="@string/logger_service_name" android:exported="false"
-			android:enabled="true">
-        </service>
-        
-        <service android:name=".ioio.IOIOControlService"
-			android:label="@string/logger_service_name" android:exported="false"
-			android:enabled="true">
-        	<intent-filter>
+			<intent-filter>
 				<action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
 			</intent-filter>
 			<meta-data android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
 				android:resource="@xml/accessory_filter" />
+			<intent-filter>
+				<action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+			</intent-filter>
+			<meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+				android:resource="@xml/device_filter" />
         </service>
-        
+                
     </application>
 
 </manifest>

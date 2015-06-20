@@ -103,36 +103,12 @@
 		<TableRow
             android:id="@+id/tableRow6"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" >    		    
-
-            	<ToggleButton
-            	    android:id="@+id/gpsToggleButton"
-            	    android:layout_width="wrap_content"
-            	    android:layout_height="wrap_content"
-            	    android:checked="false"
-            	    android:onClick="runButtonClickHandler"
-            	    android:text="@string/toggle_gps_on"
-            	    android:textOff="@string/gps_off"
-            	    android:textOn="@string/gps_on" >
-
-			</ToggleButton>            
+            android:layout_height="wrap_content" >            
  		</TableRow>	        	    
 		<TableRow
             android:id="@+id/tableRow7"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" >    
-		    
-        	<ToggleButton
-        	    android:id="@+id/ioioToggleButton"
-        	    android:layout_width="wrap_content"
-        	    android:layout_height="wrap_content"
-        	    android:checked="false"
-        	    android:onClick="runButtonClickHandler"
-        	    android:text="@string/toggle_ioio"
-        	    android:textOff="@string/ioio_off"
-        	    android:textOn="@string/ioio_on" >
-
-			</ToggleButton>
+            android:layout_height="wrap_content" >
         </TableRow>
       	    <TextView
                 android:id="@+id/textView16"
@@ -213,36 +189,11 @@
                android:text="@string/mode_simulator" />
 
         </TableRow>
-
-	    <TextView
-	        android:id="@+id/textView10"
-	        android:layout_width="wrap_content"
-	        android:layout_height="wrap_content"
-	        android:text="@string/title_bound_nav_services"
-	        android:textAppearance="?android:attr/textAppearanceMedium" >
-
-		</TextView>
         
         <TableRow
             android:id="@+id/tableRow12"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content" >
-
-            <CheckBox
-                android:id="@+id/gpsServiceCheckBox"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:onClick="checkBoxClickHandler"
-                android:text="@string/gps" />
-
-            <CheckBox
-                android:id="@+id/ioioServiceCheckBox"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:onClick="checkBoxClickHandler"
-                android:text="@string/IOIO" />
  
         </TableRow>
             
@@ -467,6 +418,30 @@
       	  	    android:text="@string/default_gps_accuracy"
       	  	    android:textAppearance="?android:attr/textAppearanceMedium" >
 
+			</TextView>
+      	  	      	    	  
+      	</TableRow>
+      	
+      	<TableRow
+      	    android:id="@+id/tableRow24"
+      	    android:layout_width="wrap_content"
+      	    android:layout_height="wrap_content" >
+
+      	  	<TextView
+      	  	    android:id="@+id/textViewZ"
+      	  	    android:layout_width="wrap_content"
+      	  	    android:layout_height="wrap_content"
+      	  	    android:text="@string/CompassHeadingLabel"
+      	  	    android:textAppearance="?android:attr/textAppearanceMedium" >
+
+			</TextView>
+			
+      	  	<TextView
+      	  	    android:id="@+id/HeadingTextView"
+      	  	    android:layout_width="wrap_content"
+      	  	    android:layout_height="wrap_content"
+      	  	    android:text="@string/default_compass_heading"
+      	  	    android:textAppearance="?android:attr/textAppearanceMedium" >
 			</TextView>
       	  	      	    	  
       	</TableRow>

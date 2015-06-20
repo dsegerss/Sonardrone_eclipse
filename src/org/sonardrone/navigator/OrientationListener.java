@@ -1,4 +1,4 @@
-package org.sonardrone.gps;
+package org.sonardrone.navigator;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;

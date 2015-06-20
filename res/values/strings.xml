@@ -47,6 +47,8 @@
     <string name="Set_motor_load">Set motor load</string>
     <string name="Read_GPS">Read GPS</string>
     <string name="X_Y_Accuracy">X,Y,Accuracy:</string>
+    <string name="CompassHeadingLabel">Compass heading:</string>
+    <string name="default_compass_heading">-</string>
     <string name="default_gps_accuracy">-,-,-</string>
     <string name="Filtering_and_measurements">Filtering and measurements</string>
     <string name="mode">Mode</string>

@@ -12,34 +12,33 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.sonardrone.navigator.Navigator;
-
 import android.os.Environment;
 import android.util.Log;
-import android.widget.Toast;
 
 public class Project {
 	private static final String SETTINGS_FILE_NAME = "settings.rf";
 	private static final String SETTINGS_TEMPLATE_FILE_NAME = ".settings.rf";
+	private static final String CURRENT_PROJECT_FILE_NAME = ".current_project.rf";
 	private static final String NAVLOG_FILE_NAME = "nav.log";
 	private static final String MEASLOG_FILE_NAME = "meas.log";
 	private static final String STATELOG_FILE_NAME = "state.rf";
 	private static final String ROOT_DIR_NAME = "/sonardrone";
 	private static final String WAYPOINT_FILE_NAME = "waypoints.txt";
 	
-	private final String TAG = "Settings";	
+	private final String TAG = "PROJECT";	
 	private File rf = null;
 	private File waypoint_file = null;
-	private File sdcard  = null;
 	private File rootDir = null;
 	private String projectName = null;
 	private File template = null;
+	private File current_project = null;
 	private long last_read = 0;
+	private File navlog_file = null;
+	private File statelog_file = null;
+	private File measlog_file = null;
 	private BufferedWriter navlog;
 	private BufferedWriter statelog;
 	private BufferedWriter measlog;
@@ -53,19 +52,22 @@ public class Project {
 			Log.e("TAG", "Sdcard is not available, terminating");
 			System.exit(1);
 		}
-		this.sdcard = Environment.getExternalStorageDirectory();
-		this.rootDir = new File(this.sdcard, ROOT_DIR_NAME);
+		this.rootDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), ROOT_DIR_NAME);
 		
 		this.projectName = projName;		
 		this.waypoint_file = new File(this.getProjectDir(), WAYPOINT_FILE_NAME);
 		this.rf = new File(this.getProjectDir(), SETTINGS_FILE_NAME);
 		this.template = new File(this.rootDir, SETTINGS_TEMPLATE_FILE_NAME);
-
+		this.current_project = new File(this.rootDir, CURRENT_PROJECT_FILE_NAME);
+		
 		if (!this.rootDir.exists())
 			this.rootDir.mkdir();
 		
 		if (!this.template.exists())
 			this.write_template();
+		
+		if (!this.current_project.exists())
+			this.write_current_project("default");
 		
 		File projectDir = this.getProjectDir();
 		if (!projectDir.exists())
@@ -92,14 +94,11 @@ public class Project {
 			Log.e(TAG,"Error copying project resource file");
 		}
 	}
-	
-//	Toast.makeText(getBaseContext(), "SD card not present",
-//			Toast.LENGTH_LONG).show();
-	
-	
+		
 	public String[] listProjects() {
 		// List project directories
 		ArrayList<String> projectDirs = new ArrayList<String>();
+		projectDirs.add("default");
 		File[] files = this.rootDir.listFiles();
 		for (int i = 0; i < files.length; i++)
 			if (files[i].isDirectory())
@@ -114,13 +113,91 @@ public class Project {
 		return (this.rf.lastModified() > this.last_read);
 	}
 	
+	public void set_current() {
+		if(this.current_project.exists())
+			this.current_project.delete();
+		this.write_current_project(this.projectName);
+	}
+	
+	public String get_current() {
+		BufferedReader reader = null;		
+		Log.d(TAG,"Reading resources");
+		try {
+			reader = new BufferedReader(new FileReader(current_project));
+			String name = reader.readLine();
+			return name;
+		}
+		catch (FileNotFoundException e) {
+			Log.e(TAG, "Error: " + e.getMessage());
+			System.exit(1);
+		}
+		catch (IOException e) {
+			Log.e(TAG, "Error: " + e.getMessage());
+			System.exit(1);
+		} 
+		finally {
+			try {
+				if (reader != null) {
+					reader.close();
+				}
+			} catch (IOException e) {
+				Log.e(TAG, "Error: " + e.getMessage());
+				System.exit(1);
+			}
+		}
+		return "default";
+
+	}
+	
+	public void write_current_project(String name) {
+		BufferedWriter writer = null;
+		Log.d(TAG,"Creating current project file");
+		
+		try {
+			if(!current_project.createNewFile())
+				Log.e(TAG, "Could not create .current_project.rf");
+		} catch (IOException e) {
+			Log.e(TAG, e.getMessage());
+		}
+		try {
+			if(!template.canWrite())
+				Log.e(TAG, "Cannot write to .current_project.rf");
+			
+			writer = new BufferedWriter(new FileWriter(current_project));
+			writer.write(name);
+		} catch (FileNotFoundException e) {
+			Log.e(TAG, "Error: " + e.getMessage());
+			System.exit(1);
+		} catch (IOException e) {
+			Log.e(TAG, "Error: " + e.getMessage());
+			System.exit(1);
+		} finally {
+			try {
+				if (writer != null) {
+					writer.close();
+				}
+			} catch (IOException e) {
+				Log.e(TAG, "Error: " + e.getMessage());
+				System.exit(1);
+			}
+		}
+	}
+
 	public void write_template() {
 		BufferedWriter writer = null;
 		Log.d(TAG,"Creating default settings");
 		try {
-			rf.createNewFile();
-			writer = new BufferedWriter(new FileWriter(rf));
-			writer.write("#Sonar drone, resource file\n"
+			if(!template.createNewFile())
+				Log.e(TAG, "Could not create default .settings.rf");
+		} catch (IOException e) {
+			Log.e(TAG, e.getMessage());
+		}
+		try {
+			if(!template.canWrite())
+				Log.e(TAG, "Cannot write to .settings.rf");
+
+			writer = new BufferedWriter(new FileWriter(template));
+			writer.write("#Sonar drone, resource file\r\n"
 					+ "####Initialization of model#####\n"
 					+ "#k=p/v³ , estimated from p = 85%,V = 4m/s\n"
 					+ "k: 3.14\n"
@@ -141,10 +218,8 @@ public class Project {
 					+ "encoderTurnrateSwitch: true\n"
 					+ "updateKSwitch: true\n"
 					+ "navServiceSwitch: true\n"
-					+ "ioioServiceSwitch: true\n"
-					+ "simulateGPSSwitch: true\n"
+					+ "simulator: true\n"
 					+ "appendLogs: true\n"
-					+ "gpsServiceSwitch: true\n"
 					+ "debugSwitch: false\n"
 					+ "autoPilot: false\n"
 					+ "#####Pure-pursuit parameters#####\n"
@@ -217,10 +292,22 @@ public class Project {
 		boolean append = this.getParameterAsBoolean("appendLogs");
 
 		try {
+			navlog_file = new File(this.getProjectDir(), NAVLOG_FILE_NAME);
+			if (!navlog_file.exists())
+				append = false;
+			
+			statelog_file = new File(this.getProjectDir(), STATELOG_FILE_NAME);
+			if (!statelog_file.exists())
+				append = false;
+			
+			measlog_file = new File(this.getProjectDir(), MEASLOG_FILE_NAME);
+			if (!measlog_file.exists())
+				append = false;
+			
 			// Create file
-			FileWriter navlogfstream = new FileWriter(new File(this.getProjectDir(), NAVLOG_FILE_NAME), append);
-			FileWriter statelogfstream = new FileWriter(new File(this.getProjectDir(), STATELOG_FILE_NAME), append);
-			FileWriter measlogfstream = new FileWriter(new File(this.getProjectDir(), MEASLOG_FILE_NAME), append);
+			FileWriter navlogfstream = new FileWriter(navlog_file, append);
+			FileWriter statelogfstream = new FileWriter(statelog_file, append);
+			FileWriter measlogfstream = new FileWriter(measlog_file, append);
 
 			this.navlog = new BufferedWriter(navlogfstream);
 			this.statelog = new BufferedWriter(statelogfstream);
@@ -295,7 +382,7 @@ public class Project {
 			for (int i = 0; i < rfRowNr.size(); i++) {
 				String row = rfRowNr.get(String.valueOf(i));
 				if (row.trim().startsWith("#") || row.trim() == "") {
-					writer.write(row);
+					writer.write(row + "\n");
 				} else {
 					String val = parameters.get(row);
 					writer.write(String.format("%s: %s\n", row, val));
@@ -384,10 +471,21 @@ public class Project {
 	}
 	
 	public File getProjectDir() {
-		if (this.projectName.equals("default"))
-			return this.rootDir;
-		else
-			return new File(this.rootDir, this.projectName);
+		try {
+			if (this.projectName.equals("default")) {
+				Log.d(TAG, "Project dir is rootDir");
+				return this.rootDir;
+			}
+			else {
+				Log.d(TAG, "Project dir is " + this.projectName);
+				return new File(this.rootDir, this.projectName);			
+			}
+		}
+		catch (NullPointerException e) {
+			Log.d(TAG, "big trouble");
+		}
+		return this.rootDir;
+
 	}
 	
 	public String getProjectName() {
@@ -396,14 +494,18 @@ public class Project {
 	
 	public void deleteProject(String projName) {
 		if (projName.equals(this.projectName))
-			Log.e(TAG, "Cannot delete active project");			
+			Log.e(TAG, "Cannot delete active project");
+		else if (projName.equals("default"))
+			Log.e(TAG, "Cannot delete default project");
 		else {
 			File selectedProject = new File(
 					this.getRootDir(),
-						projectName);
+						projName);
 			String[] children = selectedProject.list();
-			for (int i = 0; i < children.length; i++) {
-				new File(selectedProject, children[i]).delete();
+			if(children != null) {
+				for (int i = 0; i < children.length; i++) {
+					new File(selectedProject, children[i]).delete();
+				}
 			}
 			selectedProject.delete();
 		}

@@ -13,14 +13,8 @@ import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.message.BasicNameValuePair;
-import org.sonardrone.gps.GpsLoggerService;
-import org.sonardrone.ioio.IOIOControlService;
 import org.sonardrone.navigator.Navigator;
 import org.sonardrone.navigator.NavigatorService;
-
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GooglePlayServicesUtil;
-import com.google.android.gms.gcm.GoogleCloudMessaging;
 
 import android.app.Activity;
 import android.app.ActivityManager;
@@ -36,6 +30,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.support.v4.content.LocalBroadcastManager;
 import android.text.Editable;
 import android.util.Log;
@@ -47,6 +42,10 @@ import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.gcm.GoogleCloudMessaging;
 
 public class SonardroneActivity extends Activity {
 	//GCM init
@@ -64,56 +63,17 @@ public class SonardroneActivity extends Activity {
     SharedPreferences prefs;
     Context context;
     String regid;
+	private static volatile PowerManager.WakeLock lockStatic = null;
     
 	private static final String TAG = "SonardroneActivity";
 	static final int DELETE_PROJECT_ID = 1;
 
-	private BroadcastReceiver locationReceiver = new BroadcastReceiver() {
-	    @Override
-	    public void onReceive(Context context, Intent intent) {
-	    	SonardroneActivity.this.setGPS(
-	    			intent.getDoubleArrayExtra("pos"),
-	        		intent.getLongExtra("timestamp", 0),	
-	        		intent.getFloatExtra("accuracy", 0));
-	    }
-	};
+	private BroadcastReceiver locationReceiver = null;
 	
-	private BroadcastReceiver orientationReceiver = new BroadcastReceiver() {
-	    @Override
-	    public void onReceive(Context context, Intent intent) {
-	    	SonardroneActivity.this.setCompass(
-	    			intent.getDoubleExtra("heading", 0.0),
-	        		intent.getLongExtra("timestamp", 0));
-	    }
-	};
+	private BroadcastReceiver orientationReceiver = null;
 	
-	private BroadcastReceiver serviceStatusReceiver = new BroadcastReceiver() {
-	    @Override
-	    public void onReceive(Context context, Intent intent) {
-	    	String serviceName = intent.getStringExtra("SERVICE");
-	    	boolean running = intent.getBooleanExtra("STATE", false);
-	    	
-	    	
-	    	CompoundButton toggleButton = null;
-	    	if (serviceName == "GpsLoggerService")
-	    		toggleButton = (CompoundButton) findViewById(R.id.gpsToggleButton);
-	    	if (serviceName == "IOIOControlService")
-	    			toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
-	    	if (serviceName == "NavigatorService")
-    			toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
-	    	
-	    	if (running && !toggleButton.isChecked() ) {	    	
-	    		toggleButton.setChecked(true);
-	    	}
-	    	else {
-	    		if (!running && toggleButton.isChecked()) {
-	    			toggleButton.setChecked(true);
-	    		}
-	    	}
-	    }
-	};
+	private BroadcastReceiver serviceStatusReceiver = null;
 	
-
 	private boolean checkPlayServices() {
 	    int resultCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
 	    if (resultCode != ConnectionResult.SUCCESS) {
@@ -128,6 +88,16 @@ public class SonardroneActivity extends Activity {
 	    }
 	    return true;
 	}
+	
+	 synchronized private static PowerManager.WakeLock getLock(Context context) {
+			if (lockStatic == null) {
+				PowerManager mgr=
+						(PowerManager)context.getSystemService(Context.POWER_SERVICE);
+		      lockStatic=mgr.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG);
+		    }
+		    return(lockStatic);
+		  }
+
 	
 	/** Called when the activity is first created. */
 	@Override
@@ -312,6 +282,46 @@ public class SonardroneActivity extends Activity {
 	
 	public void onResume() {
 		super.onResume();
+		orientationReceiver = new BroadcastReceiver() {
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				SonardroneActivity.this.setCompass(
+		    			intent.getDoubleExtra("heading", 0.0),
+		    			intent.getLongExtra("timestamp", 0));
+			}
+		};
+
+		locationReceiver = 	new BroadcastReceiver() {
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				SonardroneActivity.this.setGPS(
+						intent.getDoubleArrayExtra("pos"),
+						intent.getLongExtra("timestamp", 0),	
+						intent.getFloatExtra("accuracy", 0));
+			}
+		};
+			
+		serviceStatusReceiver = new BroadcastReceiver() {
+		    @Override
+		    public void onReceive(Context context, Intent intent) {
+		    	String serviceName = intent.getStringExtra("SERVICE");
+		    	boolean running = intent.getBooleanExtra("STATE", false);
+		    	
+		    	CompoundButton toggleButton = null;
+		    	if (serviceName == "NavigatorService")
+	    			toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
+		    	
+		    	if (running && !toggleButton.isChecked() ) {	    	
+		    		toggleButton.setChecked(true);
+		    	}
+		    	else {
+		    		if (!running && toggleButton.isChecked()) {
+		    			toggleButton.setChecked(true);
+		    		}
+		    	}
+		    }
+		};
+		    
 		LocalBroadcastManager.getInstance(this.context).registerReceiver(locationReceiver,
 				new IntentFilter("LOCATION_UPDATED"));
 		LocalBroadcastManager.getInstance(this.context).registerReceiver(orientationReceiver,
@@ -323,29 +333,17 @@ public class SonardroneActivity extends Activity {
 	}
 	
 	public void onPause() {
-   	    LocalBroadcastManager.getInstance(this.context).unregisterReceiver(serviceStatusReceiver);
-   		LocalBroadcastManager.getInstance(this.context).unregisterReceiver(locationReceiver);
-   		LocalBroadcastManager.getInstance(this.context).unregisterReceiver(orientationReceiver);
+		super.onPause();
+		if (this.serviceStatusReceiver != null)
+				LocalBroadcastManager.getInstance(this.context).unregisterReceiver(serviceStatusReceiver);
+		if (this.locationReceiver!= null)
+			LocalBroadcastManager.getInstance(this.context).unregisterReceiver(locationReceiver);
+   		if (this.orientationReceiver!=null)
+		LocalBroadcastManager.getInstance(this.context).unregisterReceiver(orientationReceiver);
 	}
 	
 	public void updateServiceSwitches() {
-		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.gpsToggleButton);
-		if (!toggleButton.isChecked() && this.gpsLoggerServiceIsRunning())
-			toggleButton.setChecked(true);
-		else {
-			if (toggleButton.isChecked() && !this.gpsLoggerServiceIsRunning()) 
-				toggleButton.setChecked(false);
-		}
-		
-		
-		toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
-		if (!toggleButton.isChecked() && this.ioioControlServiceIsRunning())
-			toggleButton.setChecked(true);
-		else {
-			if (toggleButton.isChecked() && !this.ioioControlServiceIsRunning()) 
-				toggleButton.setChecked(false);
-		}
-		
+		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
 		toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
 		if (!toggleButton.isChecked() && this.navigatorServiceIsRunning())
 			toggleButton.setChecked(true);
@@ -354,27 +352,7 @@ public class SonardroneActivity extends Activity {
 				toggleButton.setChecked(false);
 		}
 	}
-	
-	private boolean gpsLoggerServiceIsRunning() {
-	    ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-	    for (RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
-	        if (GpsLoggerService.class.getName().equals(service.service.getClassName())) {
-	            return true;
-	        }
-	    }
-	    return false;
-	}
-	
-	private boolean ioioControlServiceIsRunning() {
-	    ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-	    for (RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
-	        if (IOIOControlService.class.getName().equals(service.service.getClassName())) {
-	            return true;
-	        }
-	    }
-	    return false;
-	}
-	
+		
 	private boolean navigatorServiceIsRunning() {
 	    ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
 	    for (RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
@@ -444,7 +422,6 @@ public class SonardroneActivity extends Activity {
 		Spinner projectSpinner = (Spinner) findViewById(R.id.projectSpinner);
 		Navigator.projectName = (String) projectSpinner.getSelectedItem();
 		this.prj = new Project(Navigator.projectName);
-		this.prj.read();
 		this.setUIConfig();
 	}
 
@@ -480,18 +457,6 @@ public class SonardroneActivity extends Activity {
 			else
 				this.prj.setBoolean("debugSwitch", false);
 			break;
-		case R.id.gpsServiceCheckBox:
-			if (cb.isChecked())
-				this.prj.setBoolean("gpsServiceSwitch", true);
-			else
-				this.prj.setBoolean("gpsServiceSwitch", false);
-			break;
-		case R.id.ioioServiceCheckBox:
-			if (cb.isChecked())
-				this.prj.setBoolean("ioioServiceSwitch", true);
-			else
-				this.prj.setBoolean("ioioServiceSwitch", false);
-			break;
 		case R.id.appendCheckBox:
 			if (cb.isChecked())
 				this.prj.setBoolean("appendLogs", true);
@@ -511,20 +476,49 @@ public class SonardroneActivity extends Activity {
 		// set checkBoxes
 		((CheckBox) findViewById(R.id.debugCheckBox)).setChecked(
 				this.prj.getParameterAsBoolean("debugSwitch"));
-		((CheckBox) findViewById(R.id.gpsServiceCheckBox)).setChecked(
-				this.prj.getParameterAsBoolean("gpsServiceSwitch"));
-		((CheckBox) findViewById(R.id.ioioServiceCheckBox)).setChecked(
-				this.prj.getParameterAsBoolean("ioioServiceSwitch"));
+		
+		((CheckBox) findViewById(R.id.kalmanCheckBox)).setChecked(
+				this.prj.getParameterAsBoolean("filterSwitch"));
+		
+		((CheckBox) findViewById(R.id.compassMeasurementCheckBox)).setChecked(
+				this.prj.getParameterAsBoolean("compassSwitch"));
+		
+		((CheckBox) findViewById(R.id.gpsVelMeasurementCheckBox)).setChecked(
+				this.prj.getParameterAsBoolean("gpsVelSwitch"));
+		
+		((CheckBox) findViewById(R.id.gpsPosMeasurementCheckBox)).setChecked(
+				this.prj.getParameterAsBoolean("gpsPositionSwitch"));
+		
+		((CheckBox) findViewById(R.id.gpsBearingMeasurementCheckBox)).setChecked(
+				this.prj.getParameterAsBoolean("gpsBearingSwitch"));
+		
+		((CheckBox) findViewById(R.id.encoderVelMeasurementCheckBox)).setChecked(
+				this.prj.getParameterAsBoolean("encoderVelSwitch"));
+		
 		((CheckBox) findViewById(R.id.appendCheckBox)).setChecked(
 				this.prj.getParameterAsBoolean("appendLogs"));
+		
+		((CheckBox) findViewById(R.id.encoderTurnrateMeasurementCheckBox)).setChecked(
+				this.prj.getParameterAsBoolean("encoderTurnrateSwitch"));
+		
 		((CheckBox) findViewById(R.id.simulateGPSCheckBox)).setChecked(
 				this.prj.getParameterAsBoolean("simulateGPSSwitch"));
+	
 		// set floats
 		((EditText) findViewById(R.id.waypointToleranceEditText)).setText(
 					this.prj.getParameterAsString("tolerance"));
 		
 		((EditText) findViewById(R.id.dtEditText)).setText(
 				this.prj.getParameterAsString("dt_default"));
+		
+		((EditText) findViewById(
+				R.id.waypointToleranceEditText)).setText(
+						this.prj.getParameterAsString("tolerance"));
+		
+		((EditText) findViewById(
+				R.id.dtEditText)).setText(
+						this.prj.getParameterAsString("dt_default"));
+		
 		// set integers
 
 	}
@@ -533,12 +527,7 @@ public class SonardroneActivity extends Activity {
 		// get checkBoxes
 		this.prj.setBoolean("debugSwitch",
 				((CheckBox) findViewById(R.id.debugCheckBox)).isChecked());
-		this.prj.setBoolean("gpsServiceSwitch",
-				((CheckBox) findViewById(
-						R.id.gpsServiceCheckBox)).isChecked());
-		this.prj.setBoolean("ioioServiceSwitch",
-				((CheckBox) findViewById(
-						R.id.ioioServiceCheckBox)).isChecked());
+		
 		this.prj.setBoolean("filterSwitch",
 				((CheckBox) findViewById(
 						R.id.kalmanCheckBox)).isChecked());
@@ -600,25 +589,17 @@ public class SonardroneActivity extends Activity {
 			toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
 			intent = new Intent(SonardroneActivity.this, NavigatorService.class);
 			break;
-		case R.id.gpsToggleButton:
-			toggleButton = (CompoundButton) findViewById(R.id.gpsToggleButton);
-			intent = new Intent(SonardroneActivity.this, GpsLoggerService.class);
-			break;
-		case R.id.ioioToggleButton:
-			toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
-			intent = new Intent(SonardroneActivity.this,
-					IOIOControlService.class);
-			break;
 		}
 		
-		// PendingIntent pendingIntent = PendingIntent.getService(
-		// SonardroneActivity.this, 0, intent, 0);
-
 		if (toggleButton.isChecked()) {
 			this.getUIConfig();
 			this.prj.write();
+			getLock(this).acquire();
 			startService(intent);
 		} else {
+			if (lockStatic.isHeld()) {
+				lockStatic.release();
+			}
 			stopService(intent);
 		}
 
@@ -636,6 +617,14 @@ public class SonardroneActivity extends Activity {
 	    intent.putExtra("value", value);
 	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
 	}
+
+	public void broadcastNavCommandInt(String command, int value) {
+		Intent intent = new Intent("COMMAND");
+	    intent.putExtra("command", command);
+	    intent.putExtra("value", value);
+	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
+	}
+
 	
 	public void broadcastNavCommandBoolean(String command, boolean value) {
 		Intent intent = new Intent("COMMAND");
@@ -652,34 +641,32 @@ public class SonardroneActivity extends Activity {
 	    LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
 	}
 	public void testRudder(View view) {
-		// Check if ioio service is running, if not - toggle service button
-		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
+		// Check if nav service is running, if not - toggle service button
+		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
 		if (!toggleButton.isChecked()) {
 			toggleButton.setChecked(true);
-			runButtonClickHandler(findViewById(R.id.ioioToggleButton));
+			runButtonClickHandler(findViewById(R.id.navToggleButton));
 		}
-		Integer rudderAngle = Integer
+		int rudderAngle = Integer
 				.valueOf(((EditText) findViewById(R.id.rudderAngleEditText))
 						.getEditableText().toString());
 
-		this.broadcastNavCommandDouble("SET_RUDDER", rudderAngle);
+		this.broadcastNavCommandInt("SET_RUDDER", rudderAngle);
 	}
 	
 	public void testMotor(View view) {
-		// Check if ioio service is running, if not - toggle service button
-		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
+		CompoundButton toggleButton = (CompoundButton) findViewById(R.id.navToggleButton);
 		if (!toggleButton.isChecked()) {
 			toggleButton.setChecked(true);
-			runButtonClickHandler(findViewById(R.id.ioioToggleButton));
+			runButtonClickHandler(findViewById(R.id.navToggleButton));
 		}
-		Integer motorLoad = Integer
+		int motorLoad = Integer
 				.valueOf(((EditText) findViewById(R.id.motorLoadEditText))
 						.getEditableText().toString());
-		this.broadcastNavCommandDouble("SET_LOAD", motorLoad);
+		this.broadcastNavCommandInt("SET_LOAD", motorLoad);
 	}
 
 	public void setGPS(double[] pos, long timestamp, float accuracy) {
-		Log.d(TAG,"setGPS");
 		TextView textview = (TextView) findViewById(R.id.XYAccuracyTextView);
 
 		String gpsStatus;
@@ -689,6 +676,11 @@ public class SonardroneActivity extends Activity {
 				String.valueOf(accuracy),
 				String.valueOf(timestamp));
 		textview.setText((CharSequence) gpsStatus);
+	}
+	
+	public void setCompass(double heading, long timestamp) {
+		TextView textview = (TextView) findViewById(R.id.HeadingTextView);
+		textview.setText((CharSequence) String.valueOf(heading));
 	}
 
 	public void onDestroy() {
@@ -704,16 +696,6 @@ public class SonardroneActivity extends Activity {
 		if(toggleButton.isChecked())
 			stopService(intent);
 					
-		toggleButton = (CompoundButton) findViewById(R.id.gpsToggleButton);
-		intent = new Intent(SonardroneActivity.this, GpsLoggerService.class);
-		if(toggleButton.isChecked())
-			stopService(intent);
-		
-		toggleButton = (CompoundButton) findViewById(R.id.ioioToggleButton);
-		intent = new Intent(SonardroneActivity.this,IOIOControlService.class);
-		if(toggleButton.isChecked())
-			stopService(intent);
-
 	}
 
 }

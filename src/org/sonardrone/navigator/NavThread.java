@@ -5,8 +5,6 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
 import java.util.List;
 
 import org.apache.http.HttpResponse;
@@ -19,16 +17,13 @@ import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.message.BasicNameValuePair;
 import org.sonardrone.Project;
 import org.sonardrone.SonardroneActivity;
-import org.sonardrone.ioio.IOIOControlService;
+import org.sonardrone.navigator.NavigatorService;
 
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.ServiceConnection;
 import android.content.SharedPreferences;
-import android.os.IBinder;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
 
@@ -39,10 +34,6 @@ public class NavThread extends Thread {
     public String DRONECENTRAL_URL = "drone_central_url";
     public String TAG = "NavThread";
 
-	//bound services
-	public static IOIOControlService boundIOIOControlService;
-	public static boolean ioioControlServiceIsBound = false;
-
     public NavThread(String name, Context context) {
 		super(name);
 		this.context = context;
@@ -52,32 +43,6 @@ public class NavThread extends Thread {
 		this.nav.initProject();
 	}
 	
-	private ServiceConnection ioioControlServiceConnection = new ServiceConnection() {
-		public void onServiceConnected(ComponentName className, IBinder service) {
-			boundIOIOControlService = ((IOIOControlService.LocalBinder) service)
-					.getService();
-		}
-
-		public void onServiceDisconnected(ComponentName className) {
-			boundIOIOControlService = null;
-		}
-	};
-
-	private void doBindIOIOControlService() {
-		Intent intent = new Intent(this.context, IOIOControlService.class);
-		this.context.bindService(intent, ioioControlServiceConnection,
-				Context.BIND_AUTO_CREATE);	
-		ioioControlServiceIsBound = true;
-	}
-	
-	private void doUnbindServices() {
-		if (ioioControlServiceIsBound) {
-			// Detach our existing connection.
-			this.context.unbindService(ioioControlServiceConnection);
-			ioioControlServiceIsBound = false;
-		}
-	}
-
 	public void postStatus() {
 		List<NameValuePair> nameValuePairs = new ArrayList<NameValuePair>(2);
 		double[] pos = NavThread.this.nav.getPosWGS84();
@@ -93,11 +58,11 @@ public class NavThread extends Thread {
 		nameValuePairs.add(new BasicNameValuePair("heading",
 				Double.toString(NavThread.this.nav.phi())));
 		nameValuePairs.add(new BasicNameValuePair("active",
-				Boolean.toString(NavThread.this.nav.getActive())));
+				Boolean.toString(Navigator.getActive())));
 		nameValuePairs.add(new BasicNameValuePair("rudder_angle",
-				Double.toString(NavThread.this.nav.getRudderAngle())));
+				Double.toString(Navigator.getRudderAngle())));
 		nameValuePairs.add(new BasicNameValuePair("auto_pilot",
-				Boolean.toString(NavThread.this.nav.getAutopilot())));
+				Boolean.toString(Navigator.getAutopilot())));
 		nameValuePairs.add(new BasicNameValuePair("cwp_lon",
 				Double.toString(cwp[0])));
 		nameValuePairs.add(new BasicNameValuePair("cwp_lat",
@@ -145,28 +110,19 @@ public class NavThread extends Thread {
 	private BroadcastReceiver locationReceiver = new BroadcastReceiver() {
 	    @Override
 	    public void onReceive(Context context, Intent intent) {
-	    	if (!NavThread.this.nav.simulateGPSSwitch) {
-	    		NavThread.this.nav.set_pos_GPS(
-	    				intent.getDoubleArrayExtra("pos"));
-	    		NavThread.this.nav.set_pos_GPS_time(
-	    				intent.getLongExtra("timestamp", 0));
-	    		NavThread.this.nav.set_GPS_accuracy(
-	    				intent.getFloatExtra("accuracy", 0));
-	    		NavThread.this.nav.updateGPSVel();
-	    		NavThread.this.nav.updateGPSBearing();
-	    	}
+	    	NavThread.this.nav.updateGPS(
+	    			intent.getDoubleArrayExtra("pos"),
+	    			intent.getLongExtra("timestamp", 0),
+	    			intent.getFloatExtra("accuracy", 0));
 	    }
 	};
 	
 	private BroadcastReceiver orientationReceiver = new BroadcastReceiver() {
 	    @Override
 	    public void onReceive(Context context, Intent intent) {
-	    	if (!NavThread.this.nav.simulateGPSSwitch) {
-	    		NavThread.this.nav.set_phi_compass(
-	    				intent.getDoubleExtra("heading", 0.0));
-	    		NavThread.this.nav.set_phi_compass_time(
-	    				intent.getLongExtra("timestamp", 0));
-	    	}
+	    	NavThread.this.nav.updateCompass(
+	    			intent.getDoubleExtra("heading", 0.0),
+	    			intent.getLongExtra("timestamp", 0));
 	    }
 	};
 
@@ -190,16 +146,16 @@ public class NavThread extends Thread {
 	    case OPERATE:
 	    	break;
 	    case MANUAL:
-	    	NavThread.this.nav.setAutopilot(false);
+	    	Navigator.setAutopilot(false);
 	    	break;
 	    case AUTOPILOT:
-	    	NavThread.this.nav.setAutopilot(true);
+	    	Navigator.setAutopilot(true);
 	    	break;
 	    case DEACTIVATE:
-	    	NavThread.this.nav.setActive(false);
+	    	Navigator.setActive(false);
 	    	break;
 	    case ACTIVATE:
-	    	NavThread.this.nav.setActive(true);
+	    	Navigator.setActive(true);
 	    	break;
 	    case GET_STATUS:
 	    	NavThread.this.postStatus();
@@ -213,22 +169,22 @@ public class NavThread extends Thread {
 	    	}
 	    	break;
 	    case ADD_SURVEY:
-	    	NavThread.this.nav.setActive(false);
+	    	Navigator.setActive(false);
 	    	NavThread.this.writeSurvey(val);
 	    	break;	    	
 	    case SET_RUDDER:
 	    	int angle = Integer.parseInt(val);
-	    	NavThread.this.nav.setRudderAngle(angle);
+	    	Navigator.setRudderAngle(angle);
 	    	break;
 	    case START_MOTOR:
-	    	NavThread.this.nav.setMotorLoad(80.0);
+	    	Navigator.setMotorLoad(80);
 	    	break;
 	    case STOP_MOTOR:
-	    	NavThread.this.nav.setMotorLoad(0.0);
+	    	Navigator.setMotorLoad(0);
 	    	break;
 	    case SET_LOAD:
 	    	int load = Integer.parseInt(val);
-	    	NavThread.this.nav.setMotorLoad((double) load);
+	    	Navigator.setMotorLoad(load);
 	    	break;
 	    case SHUTDOWN:
 	    	NavThread.this.nav.finish();
@@ -267,8 +223,6 @@ public class NavThread extends Thread {
 
     @Override
     public void run(){
-    	Log.d(TAG, "Binding to IOIO service");
-    	doBindIOIOControlService();
     	
 		LocalBroadcastManager.getInstance(this.context).registerReceiver(gcmMessageReceiver,
 				new IntentFilter("COMMAND"));
@@ -285,10 +239,11 @@ public class NavThread extends Thread {
     	// init measurement logs
     	this.prj.initLogs();
     	
-    	this.nav.initTime();
-    	
     	// init sensors, e.g. wait for GPS-fix
     	this.nav.initSensors();
+    	
+    	// init navigation time
+    	this.nav.initTime();
 
     	// operation loop
     	while (NavigatorService.operative) {
@@ -306,6 +261,5 @@ public class NavThread extends Thread {
    	    LocalBroadcastManager.getInstance(this.context).unregisterReceiver(gcmMessageReceiver);
    		LocalBroadcastManager.getInstance(this.context).unregisterReceiver(locationReceiver);
    		LocalBroadcastManager.getInstance(this.context).unregisterReceiver(orientationReceiver);
-		doUnbindServices();
 		}
     };
